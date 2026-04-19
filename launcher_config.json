@@ -1,0 +1,8 @@
+{
+  "grandma2_path": "",
+  "grandma2_args": [],
+  "app_host": "127.0.0.1",
+  "app_port": 8000,
+  "auto_open_browser": true,
+  "startup_wait_seconds": 2.5
+}
