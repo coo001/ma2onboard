@@ -1,7 +1,5 @@
-"""AI natural language → grandMA2 command parser."""
+"""AI natural language → grandMA2 command parser (OpenAI backend)."""
 import json
-import re
-from typing import Optional
 
 try:
     from dotenv import load_dotenv
@@ -9,9 +7,9 @@ try:
 except ImportError:
     pass
 
-import anthropic
+from openai import AsyncOpenAI
 
-_client = anthropic.AsyncAnthropic()
+_client = AsyncOpenAI()
 
 # 조명별 현재 상태 추적 (상대 명령어 처리용)
 _states: dict[int, dict] = {}
@@ -47,7 +45,7 @@ _SYSTEM = """\
 
 ## 방향 (현재 상태 기반 절댓값 계산, 반드시 0-100 클램핑)
 - 위쪽=tilt+N, 아래쪽=tilt-N, 오른쪽=pan+N, 왼쪽=pan-N
-- "조금"=±15, "많이/크게/많이"=±30
+- "조금"=±15, "많이/크게"=±30
 - "포커스 풀고/초점 없애고/흐릿하게" = focus=0
 - "포커스 최대/선명하게" = focus=100
 
@@ -55,9 +53,7 @@ _SYSTEM = """\
 - "1번 조명" → fixtures=[1]
 - "1, 2, 3번" → fixtures=[1,2,3]
 - "1~3번" → fixtures=[1,2,3]
-- "전체/모든 조명" → fixtures=[1,2,3,4,5,6,7,8,9,10]
-
-반드시 JSON만 출력하세요. 마크다운 코드블록 없이.\
+- "전체/모든 조명" → fixtures=[1,2,3,4,5,6,7,8,9,10]\
 """
 
 
@@ -99,14 +95,14 @@ async def parse_command(text: str) -> dict:
         )
     state_ctx = "\n".join(state_lines) if state_lines else "없음 (기본: 밝기50 Pan50 Tilt50 Focus50)"
 
-    msg = await _client.messages.create(
-        model="claude-haiku-4-5",
+    response = await _client.chat.completions.create(
+        model="gpt-4o-mini",
         max_tokens=600,
-        system=_SYSTEM,
-        messages=[{"role": "user", "content": f"현재 상태:\n{state_ctx}\n\n명령: {text}"}],
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": f"현재 상태:\n{state_ctx}\n\n명령: {text}"},
+        ],
     )
 
-    raw = msg.content[0].text.strip()
-    raw = re.sub(r"^```[^\n]*\n?", "", raw)
-    raw = re.sub(r"\n?```$", "", raw)
-    return json.loads(raw.strip())
+    return json.loads(response.choices[0].message.content)
