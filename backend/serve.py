@@ -21,7 +21,7 @@ def local_ip() -> str:
 
 if __name__ == "__main__":
     host = os.getenv("APP_HOST", "0.0.0.0")
-    port = int(os.getenv("APP_PORT", "8000"))
+    port = int(os.getenv("PORT", os.getenv("APP_PORT", "8000")))  # Render uses PORT
 
     ip = local_ip()
     print("=" * 50)
