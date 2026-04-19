@@ -50,6 +50,7 @@ export default function App() {
         const msg = JSON.parse(e.data)
         if (msg.type === 'cmd_log') setLogs(prev => [...prev.slice(-199), msg])
         else if (msg.type === 'connection') setConnected(msg.connected)
+        else if (msg.type === 'bridge_status' && !msg.active) setConnected(false)
       }
       ws.onclose = () => setTimeout(connectWS, 2000)
     }

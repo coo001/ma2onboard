@@ -11,6 +11,8 @@ Production-like local use:
 import asyncio
 import json
 import logging
+import os
+import uuid as _uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
@@ -65,6 +67,39 @@ logger = logging.getLogger(__name__)
 ws_clients: List[WebSocket] = []
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
+BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+
+
+class BridgeSession:
+    """로컬 PC에서 실행 중인 bridge.py와의 WebSocket 세션."""
+
+    def __init__(self, ws: WebSocket):
+        self.ws = ws
+        self.ma2_connected = False
+        self._pending: dict[str, asyncio.Future] = {}
+
+    async def request(self, msg: dict, timeout: float = 8.0) -> dict:
+        msg_id = str(_uuid.uuid4())[:8]
+        msg["id"] = msg_id
+        loop = asyncio.get_event_loop()
+        fut: asyncio.Future = loop.create_future()
+        self._pending[msg_id] = fut
+        await self.ws.send_text(json.dumps(msg, ensure_ascii=False))
+        try:
+            return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(msg_id, None)
+            return {"ok": False, "error": "브릿지 응답 타임아웃"}
+
+    def resolve(self, msg: dict):
+        msg_id = msg.get("id")
+        if msg_id and msg_id in self._pending:
+            fut = self._pending.pop(msg_id)
+            if not fut.done():
+                fut.set_result(msg)
+
+
+_bridge: BridgeSession | None = None
 
 
 @asynccontextmanager
@@ -100,8 +135,15 @@ async def broadcast(payload: dict):
             ws_clients.remove(websocket)
 
 
+async def _exec_command(command: str) -> dict:
+    """브릿지 연결 시 브릿지로, 아니면 로컬 Telnet으로 명령 실행."""
+    if _bridge is not None:
+        return await _bridge.request({"type": "exec", "command": command})
+    return await ma2_client.send_command(command)
+
+
 async def send_and_log(command: str) -> dict:
-    result = await ma2_client.send_command(command)
+    result = await _exec_command(command)
     await broadcast(
         {
             "type": "cmd_log",
@@ -169,27 +211,49 @@ class ClearFixturesRequest(BaseModel):
 
 @app.post("/api/connect")
 async def connect(req: ConnectRequest):
-    if ma2_client.connected:
-        await ma2_client.disconnect()
+    global _bridge
+    if _bridge is not None:
+        result = await _bridge.request({
+            "type": "connect",
+            "host": req.host, "port": req.port,
+            "user": req.user, "password": req.password,
+        })
+        _bridge.ma2_connected = result.get("ok", False)
+    else:
+        if ma2_client.connected:
+            await ma2_client.disconnect()
+        result = await ma2_client.connect(req.host, req.port, req.user, req.password)
 
-    result = await ma2_client.connect(req.host, req.port, req.user, req.password)
     await broadcast({"type": "connection", "connected": result.get("ok", False), **result})
     return result
 
 
 @app.post("/api/disconnect")
 async def disconnect():
-    await ma2_client.disconnect()
+    global _bridge
+    if _bridge is not None:
+        await _bridge.request({"type": "disconnect"})
+        _bridge.ma2_connected = False
+    else:
+        await ma2_client.disconnect()
     await broadcast({"type": "connection", "connected": False})
     return {"ok": True}
 
 
 @app.get("/api/status")
 async def status():
+    if _bridge is not None:
+        return {
+            "connected": _bridge.ma2_connected,
+            "mode": "bridge",
+            "bridge_active": True,
+        }
     return {
         "connected": ma2_client.connected,
         "host": ma2_client.host,
         "port": ma2_client.port,
+        "mode": "local",
+        "bridge_active": False,
     }
 
 
@@ -358,6 +422,42 @@ async def debug_telnet():
         result["error"] = str(exc)
 
     return result
+
+
+@app.websocket("/ws/bridge")
+async def ws_bridge(websocket: WebSocket):
+    """로컬 PC의 bridge.py가 접속하는 엔드포인트."""
+    global _bridge
+    await websocket.accept()
+
+    if _bridge is not None:
+        await websocket.send_text(json.dumps({"type": "error", "error": "다른 브릿지가 이미 연결되어 있습니다."}))
+        await websocket.close()
+        return
+
+    _bridge = BridgeSession(websocket)
+    logger.info("Bridge connected")
+    await broadcast({"type": "bridge_status", "active": True})
+    await websocket.send_text(json.dumps({"type": "registered", "url": BASE_URL}))
+
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            msg = json.loads(raw)
+            t = msg.get("type", "")
+
+            if t.endswith("_result"):
+                _bridge.resolve(msg)
+
+            if t == "cmd_log":
+                await broadcast(msg)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _bridge = None
+        logger.info("Bridge disconnected")
+        await broadcast({"type": "bridge_status", "active": False})
+        await broadcast({"type": "connection", "connected": False})
 
 
 @app.websocket("/ws/log")
