@@ -379,7 +379,8 @@ async def _apply_fixture_group(group: dict, actions: list[str]) -> None:
 
     color = group.get("color")
     if color:
-        await send_commands(cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])))
+        for cmd in cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])):
+            await send_and_log(cmd)
         actions.append(f"색상 RGB({color['r']}, {color['g']}, {color['b']})")
 
     if group.get("pan") is not None:
@@ -389,6 +390,10 @@ async def _apply_fixture_group(group: dict, actions: list[str]) -> None:
     if group.get("tilt") is not None:
         await send_and_log(cmd_tilt(int(group["tilt"])))
         actions.append(f"Tilt {group['tilt']}")
+
+    if group.get("store_cue"):
+        await send_and_log(cmd_store_cue(str(group["store_cue"])))
+        actions.append(f"큐 {group['store_cue']}번 저장")
 
     ai_update(fixtures, group)
 
@@ -430,7 +435,8 @@ async def ai_command_endpoint(req: AICommandRequest):
 
     color = parsed.get("color")
     if color:
-        await send_commands(cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])))
+        for cmd in cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])):
+            await send_and_log(cmd)
         actions.append(f"색상 RGB({color['r']}, {color['g']}, {color['b']})")
 
     if parsed.get("pan") is not None:
