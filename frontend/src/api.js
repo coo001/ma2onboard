@@ -52,4 +52,9 @@ export const api = {
   getGroups: () => get('/groups'),
   createGroup: (name, fixture_numbers) => post('/groups', { name, fixture_numbers }),
   deleteGroup: (name) => request(`/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  fixtureStates: () => get('/fixture-states'),
+  getCues: () => get('/cues'),
+  addCue: (cue_number, label = '') => post('/cues', { cue_number, label }),
+  deleteCue: (cue_number) => request(`/cues/${encodeURIComponent(cue_number)}`, { method: 'DELETE' }),
+  executeCue: (cue_number) => post(`/cues/${encodeURIComponent(cue_number)}/execute`, {}),
 }
