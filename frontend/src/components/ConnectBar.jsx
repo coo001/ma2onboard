@@ -35,7 +35,7 @@ const styles = {
   info: { fontSize: 12, color: '#a0a4bc' },
 }
 
-export default function ConnectBar({ connected, onDisconnect, autoInfo, autoStatus }) {
+export default function ConnectBar({ connected, onDisconnect, onRetry, autoInfo, autoStatus }) {
   const connecting = autoStatus === 'connecting'
 
   return (
@@ -58,9 +58,13 @@ export default function ConnectBar({ connected, onDisconnect, autoInfo, autoStat
         {autoInfo?.host}:{autoInfo?.port} / {autoInfo?.user}
       </span>
 
-      {connected && (
+      {connected ? (
         <button className="btn btn-secondary btn-sm" onClick={onDisconnect}>
           연결 끊기
+        </button>
+      ) : !connecting && (
+        <button className="btn btn-primary btn-sm" onClick={onRetry}>
+          재연결
         </button>
       )}
     </div>

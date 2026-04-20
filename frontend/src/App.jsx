@@ -51,7 +51,15 @@ export default function App() {
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data)
         if (msg.type === 'connection') setConnected(msg.connected)
-        else if (msg.type === 'bridge_status' && !msg.active) setConnected(false)
+        else if (msg.type === 'bridge_status') {
+          if (!msg.active) setConnected(false)
+          else {
+            // bridge 연결되면 자동 재연결
+            api.connect(AUTO.host, AUTO.port, AUTO.user, AUTO.password).then(r => {
+              if (r.ok) { setConnected(true); setAutoStatus('ok') }
+            })
+          }
+        }
       }
       ws.onclose = () => setTimeout(connectWS, 2000)
     }
@@ -102,7 +110,7 @@ export default function App() {
 
   return (
     <div style={s.layout}>
-      <ConnectBar connected={connected} onDisconnect={handleDisconnect} autoInfo={AUTO} autoStatus={autoStatus} />
+      <ConnectBar connected={connected} onDisconnect={handleDisconnect} onRetry={handleRetry} autoInfo={AUTO} autoStatus={autoStatus} />
 
       <div style={s.main}>
         {!connected ? (
