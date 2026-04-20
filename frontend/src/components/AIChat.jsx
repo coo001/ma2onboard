@@ -13,7 +13,7 @@ const EXAMPLES = [
 
 const s = {
   wrap: {
-    flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%',
   },
   messages: {
     flex: 1, overflowY: 'auto', padding: '24px 40px',
@@ -31,7 +31,7 @@ const s = {
       : '#e8eaf0',
     borderRadius: role === 'user' ? '16px 16px 4px 16px' : '4px 16px 16px 16px',
     padding: '12px 16px',
-    fontSize: 14,
+    fontSize: 'var(--font-md)',
     lineHeight: 1.65,
     border: role === 'error' ? '1px solid #3a0a0a'
       : role === 'system' ? '1px solid #2e334d'
@@ -43,11 +43,11 @@ const s = {
   },
   actionTag: {
     background: '#0d2a1a', border: '1px solid #1a4a2a',
-    color: '#3ddc84', fontSize: 11, padding: '3px 8px',
+    color: '#3ddc84', fontSize: 'var(--font-sm)', padding: '3px 8px',
     borderRadius: 6, fontFamily: 'monospace',
   },
   loading: {
-    alignSelf: 'flex-start', color: '#7a7f9a', fontSize: 13,
+    alignSelf: 'flex-start', color: '#7a7f9a', fontSize: 'var(--font-md)',
     display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0',
   },
   dot: (delay) => ({
@@ -59,11 +59,11 @@ const s = {
     padding: '0 40px 10px',
     display: 'flex', flexWrap: 'wrap', gap: 6,
   },
-  exLabel: { fontSize: 11, color: '#5a5f7a', marginBottom: 4, paddingLeft: 40 },
+  exLabel: { fontSize: 'var(--font-sm)', color: '#5a5f7a', marginBottom: 4, paddingLeft: 40 },
   exBtn: {
     padding: '5px 12px', borderRadius: 20,
     background: '#1a1d27', border: '1px solid #2e334d',
-    color: '#7a7f9a', fontSize: 12, cursor: 'pointer',
+    color: '#7a7f9a', fontSize: 'var(--font-sm)', cursor: 'pointer',
     whiteSpace: 'nowrap', transition: 'border-color .15s, color .15s',
   },
   inputRow: {
@@ -74,7 +74,7 @@ const s = {
   },
   textarea: {
     flex: 1, background: '#1a1d27', border: '2px solid #2e334d',
-    borderRadius: 12, color: '#e8eaf0', fontSize: 14,
+    borderRadius: 12, color: '#e8eaf0', fontSize: 'var(--font-md)',
     padding: '10px 14px', resize: 'none', lineHeight: 1.5,
     outline: 'none', fontFamily: 'inherit',
     transition: 'border-color .15s',
@@ -83,7 +83,7 @@ const s = {
     padding: '10px 22px', borderRadius: 10, border: 'none',
     background: disabled ? '#2e334d' : '#f0a500',
     color: disabled ? '#5a5f7a' : '#000',
-    fontWeight: 800, fontSize: 14, cursor: disabled ? 'default' : 'pointer',
+    fontWeight: 800, fontSize: 'var(--font-md)', cursor: disabled ? 'default' : 'pointer',
     flexShrink: 0, transition: 'background .15s',
   }),
 }

@@ -35,6 +35,7 @@ try:
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_tilt,
@@ -51,6 +52,7 @@ except ImportError:
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_tilt,
@@ -73,6 +75,9 @@ BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
 GROUPS_FILE = Path(__file__).resolve().parent / "groups.json"
 _groups_lock = asyncio.Lock()
 
+CUES_FILE = Path(__file__).resolve().parent / "cues.json"
+_cues_lock = asyncio.Lock()
+
 _GROUP_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 
@@ -85,6 +90,27 @@ def _read_groups() -> dict:
 
 def _write_groups(data: dict) -> None:
     with GROUPS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _read_cues() -> tuple[list, bool]:
+    """큐 목록을 읽어 (cues, migrated) 튜플로 반환한다.
+    migrated=True 이면 구버전 문자열 배열을 객체 배열로 변환한 것이므로
+    호출자(lock 안)에서 _write_cues()를 호출해야 한다.
+    """
+    if not CUES_FILE.exists():
+        return [], False
+    with CUES_FILE.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, list):
+        return [], False
+    if data and isinstance(data[0], str):
+        return [{"number": c, "label": ""} for c in data], True
+    return data, False
+
+
+def _write_cues(data: list) -> None:
+    with CUES_FILE.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
@@ -118,6 +144,7 @@ class BridgeSession:
 
 
 _bridge: BridgeSession | None = None
+_selected_fixtures: List[int] = []
 
 
 @asynccontextmanager
@@ -232,6 +259,11 @@ class GroupRequest(BaseModel):
     fixture_numbers: List[int] = Field(min_length=1)
 
 
+class CueRequest(BaseModel):
+    cue_number: str
+    label: Optional[str] = ""
+
+
 @app.post("/api/groups")
 async def create_group(req: GroupRequest):
     if not _GROUP_NAME_RE.match(req.name):
@@ -259,6 +291,86 @@ async def delete_group(name: str):
         del groups[name]
         _write_groups(groups)
     return {"ok": True, "deleted": name}
+
+
+@app.get("/api/cues")
+async def list_cues():
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+    for c in cues:
+        c.setdefault("source", "web")
+    return {"cues": cues}
+
+
+@app.post("/api/cues/sync")
+async def sync_cues():
+    if _bridge is not None:
+        return {"ok": False, "error": "브릿지 모드에서는 직접 sync를 지원하지 않습니다", "cues": [], "synced_count": 0}
+    if not ma2_client.connected:
+        return {"ok": False, "error": "MA2에 연결되어 있지 않습니다", "cues": [], "synced_count": 0}
+    try:
+        ma2_cues = await ma2_client.read_cue_list()
+    except Exception as e:
+        return {"ok": False, "cues": [], "synced_count": 0, "error": str(e)}
+
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+
+        # 기존 web 큐에 source 보장
+        for c in cues:
+            c.setdefault("source", "web")
+
+        existing = {c["number"]: c for c in cues}
+        synced_count = 0
+        for mc in ma2_cues:
+            num = mc["number"]
+            if num not in existing:
+                cues.append({"number": num, "label": mc["label"], "source": "ma2"})
+                synced_count += 1
+            # 이미 있는 큐는 cues.json 레이블 우선 — 변경 없음
+
+        _write_cues(cues)
+
+    return {"ok": True, "cues": cues, "synced_count": synced_count, "error": None}
+
+@app.post("/api/cues")
+async def add_cue(req: CueRequest):
+    if not re.match(r'^\d+(\.\d+)?$', req.cue_number.strip()):
+        raise HTTPException(status_code=400, detail="큐 번호는 숫자 형식이어야 합니다.")
+    num = req.cue_number.strip()
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+        if any(c["number"] == num for c in cues):
+            return JSONResponse(status_code=400, content={"ok": False, "detail": "이미 존재하는 큐 번호입니다"})
+        cues.append({"number": num, "label": req.label or "", "source": "web"})
+        _write_cues(cues)
+    return {"ok": True, "cues": cues}
+
+@app.delete("/api/cues/{cue_number}")
+async def delete_cue(cue_number: str):
+    if not re.match(r'^\d+(\.\d+)?$', cue_number.strip()):
+        raise HTTPException(status_code=400, detail="큐 번호는 숫자 형식이어야 합니다.")
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+        if not any(c["number"] == cue_number for c in cues):
+            raise HTTPException(status_code=404, detail=f"큐 '{cue_number}'를 찾을 수 없습니다.")
+        cues = [c for c in cues if c["number"] != cue_number]
+        _write_cues(cues)
+    return {"ok": True, "cues": cues}
+
+@app.post("/api/cues/{cue_number}/execute")
+async def execute_cue(cue_number: str):
+    if not re.match(r'^\d+(\.\d+)?$', cue_number.strip()):
+        raise HTTPException(status_code=400, detail="큐 번호는 숫자 형식이어야 합니다.")
+    return await send_and_log(f"Cue {cue_number} Go")
 
 
 @app.post("/api/connect")
@@ -311,6 +423,8 @@ async def status():
 
 @app.post("/api/wizard/select-fixtures")
 async def wizard_select_fixtures(req: FixtureSelectRequest):
+    global _selected_fixtures
+    _selected_fixtures = req.fixture_numbers
     return await send_and_log(cmd_select_fixtures(req.fixture_numbers))
 
 
@@ -329,7 +443,18 @@ async def wizard_intensity_color(req: IntensityColorRequest):
             )
         )
 
-    return summarize_results(await send_commands(commands))
+    results = await send_commands(commands)
+
+    if _selected_fixtures:
+        state_update: dict = {"intensity": req.intensity}
+        if req.color_preset and req.color_preset in COLOR_PRESETS:
+            rgb = COLOR_PRESETS[req.color_preset]
+            state_update["color"] = {"r": rgb[0], "g": rgb[1], "b": rgb[2]}
+        elif req.color_rgb:
+            state_update["color"] = req.color_rgb
+        ai_update(_selected_fixtures, state_update)
+
+    return summarize_results(results)
 
 
 @app.post("/api/wizard/position")
@@ -337,12 +462,20 @@ async def wizard_position(req: PositionRequest):
     commands = [cmd_pan(req.pan), cmd_tilt(req.tilt)]
     if req.focus is not None:
         commands.append(cmd_focus(req.focus))
-    return summarize_results(await send_commands(commands))
+    results = await send_commands(commands)
+    if _selected_fixtures:
+        state_update: dict = {"pan": req.pan, "tilt": req.tilt}
+        if req.focus is not None:
+            state_update["focus"] = req.focus
+        ai_update(_selected_fixtures, state_update)
+    return summarize_results(results)
 
 
 @app.post("/api/wizard/store-cue")
 async def wizard_store_cue(req: StoreCueRequest):
-    return await send_and_log(cmd_store_cue(req.cue_number))
+    if not re.match(r'^\d+(\.\d+)?$', req.cue_number.strip()):
+        raise HTTPException(status_code=400, detail="큐 번호는 숫자 형식이어야 합니다. (예: 1, 1.5)")
+    return await send_and_log(cmd_store_cue(req.cue_number.strip()))
 
 
 @app.post("/api/wizard/clear")
@@ -358,6 +491,15 @@ async def wizard_clear_fixtures(req: ClearFixturesRequest):
         cmd_clear_selection(),
     ]
     return summarize_results(await send_commands(commands))
+
+
+class QRequest(BaseModel):
+    q: int = Field(..., ge=0, le=100)
+
+
+@app.post("/api/wizard/q")
+async def wizard_q(req: QRequest):
+    return await send_and_log(cmd_q(req.q))
 
 
 class AICommandRequest(BaseModel):
@@ -585,6 +727,15 @@ async def ws_log(websocket: WebSocket):
     finally:
         if websocket in ws_clients:
             ws_clients.remove(websocket)
+
+
+@app.get("/api/fixture-states")
+async def fixture_states_endpoint():
+    try:
+        from ai_controller import get_state
+    except ImportError:
+        from .ai_controller import get_state
+    return {"states": {str(i): get_state(i) for i in range(1, 11)}}
 
 
 @app.get("/api/health")
