@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import ConnectBar from './components/ConnectBar'
 import AIChat from './components/AIChat'
 import QuickPanel from './components/QuickPanel'
+import CuePanel from './components/CuePanel'
 import { api } from './api'
 
 const AUTO = { host: '127.0.0.1', port: 30000, user: 'administrator', password: 'admin' }
 
 const s = {
   layout: { display: 'flex', flexDirection: 'column', height: '100vh' },
-  main: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  main: { flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'row' },
   overlay: { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', flex: 1 },
   overlayCard: {
     background: '#1a1d27', borderRadius: 16, padding: '40px 48px',
@@ -31,6 +32,7 @@ export default function App() {
   const [autoError, setAutoError] = useState('')
 
   const [selectedFixtures, setSelectedFixtures] = useState([])
+  const [cueRefreshKey, setCueRefreshKey] = useState(0)
   const wsRef = useRef(null)
 
   useEffect(() => {
@@ -82,8 +84,8 @@ export default function App() {
     overlayContent = (
       <>
         <div style={s.spinner} />
-        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>grandMA2 연결 중…</div>
-        <div style={{ color: '#7a7f9a', fontSize: 14 }}>127.0.0.1:30000 에 접속하고 있습니다</div>
+        <div style={{ fontSize: 'var(--font-lg)', fontWeight: 700, marginBottom: 8 }}>grandMA2 연결 중…</div>
+        <div style={{ color: '#7a7f9a', fontSize: 'var(--font-sm)' }}>127.0.0.1:30000 에 접속하고 있습니다</div>
       </>
     )
   } else if (autoStatus === 'error') {
@@ -91,17 +93,17 @@ export default function App() {
     overlayContent = (
       <>
         <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-        <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 10, color: '#f26b6b' }}>
+        <div style={{ fontSize: 'var(--font-lg)', fontWeight: 800, marginBottom: 10, color: '#f26b6b' }}>
           grandMA2 onPC가 꺼져 있어요
         </div>
-        <div style={{ color: '#a0a4bc', fontSize: 14, lineHeight: 1.9, marginBottom: 24 }}>
+        <div style={{ color: '#a0a4bc', fontSize: 'var(--font-sm)', lineHeight: 1.9, marginBottom: 24 }}>
           {isOffline ? (
             <>grandMA2 onPC 프로그램을 먼저 실행해주세요.<br />실행 후 아래 버튼을 누르면 자동으로 연결됩니다.</>
           ) : (
             <>연결 오류: <span style={{ color: '#f26b6b' }}>{autoError}</span><br />grandMA2 onPC가 실행 중인지 확인해주세요.</>
           )}
         </div>
-        <button className="btn btn-primary" onClick={handleRetry} style={{ fontSize: 15, padding: '12px 32px' }}>
+        <button className="btn btn-primary" onClick={handleRetry} style={{ fontSize: 'var(--font-md)', padding: '12px 32px' }}>
           다시 연결 시도
         </button>
       </>
@@ -119,7 +121,8 @@ export default function App() {
           </div>
         ) : (
           <>
-            <QuickPanel fixtures={selectedFixtures} onFixturesChange={setSelectedFixtures} />
+            <QuickPanel fixtures={selectedFixtures} onFixturesChange={setSelectedFixtures} onCueStored={() => setCueRefreshKey(k => k + 1)} />
+            <CuePanel refreshKey={cueRefreshKey} />
             <AIChat connected={connected} />
           </>
         )}

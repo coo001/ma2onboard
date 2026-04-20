@@ -74,3 +74,8 @@ def cmd_clear_selection() -> str:
 def cmd_off_fixtures(fixture_numbers: List[int]) -> str:
     nums = " + ".join(str(number) for number in fixture_numbers)
     return f"Off Fixture {nums}"
+
+
+def cmd_q(value: int) -> str:
+    value = max(0, min(100, value))
+    return f'Attribute "Q" At {value}'

@@ -115,6 +115,28 @@ const s = {
     textAlign: 'center',
     padding: '20px 0',
   },
+  syncBtn: (disabled) => ({
+    padding: '6px 14px',
+    borderRadius: 8,
+    border: '1px solid #2e334d',
+    background: disabled ? '#13151f' : '#22263a',
+    color: disabled ? '#3a3f55' : '#e8eaf0',
+    fontSize: 'var(--font-sm)',
+    fontWeight: 700,
+    cursor: disabled ? 'default' : 'pointer',
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
+  }),
+  ma2Badge: {
+    fontSize: '0.7em',
+    fontWeight: 700,
+    color: '#f0a500',
+    background: 'rgba(240,165,0,0.12)',
+    border: '1px solid rgba(240,165,0,0.35)',
+    borderRadius: 4,
+    padding: '1px 5px',
+    marginLeft: 6,
+  },
   toast: {
     position: 'fixed',
     bottom: 32,
@@ -139,6 +161,7 @@ export default function CuePanel({ refreshKey }) {
   const [input, setInput] = useState('')
   const [labelInput, setLabelInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState(null)
 
   async function loadCues() {
@@ -173,6 +196,18 @@ export default function CuePanel({ refreshKey }) {
     setInput('')
     setLabelInput('')
     loadCues()
+  }
+
+  async function handleSync() {
+    setSyncing(true)
+    const r = await api.syncCues()
+    setSyncing(false)
+    if (r.ok === false) {
+      showError(r.error || '동기화 실패')
+    } else {
+      await loadCues()
+      showError(r.synced_count > 0 ? `MA2에서 ${r.synced_count}개 큐를 가져왔습니다.` : '새로운 큐 없음')
+    }
   }
 
   async function handleDelete(num) {
@@ -210,6 +245,7 @@ export default function CuePanel({ refreshKey }) {
             <span style={s.cueNum(currentCue === cue.number)}>
               Cue {cue.number}
               {cue.label && <span style={{ color: '#7a7f9a', fontSize: '0.8em', marginLeft: 6 }}>{cue.label}</span>}
+              {cue.source === 'ma2' && <span style={s.ma2Badge}>MA2</span>}
             </span>
             <button style={s.goBtn(sending)} onClick={() => handleExecute(cue.number)} disabled={sending}>GO</button>
             <button style={s.deleteBtn} onClick={() => handleDelete(cue.number)}>✕</button>
@@ -220,6 +256,12 @@ export default function CuePanel({ refreshKey }) {
       <div style={s.navRow}>
         <button style={s.navBtn(!cues.length || sending)} onClick={handlePrev} disabled={!cues.length || sending}>◀ 이전</button>
         <button style={s.navBtn(!cues.length || sending)} onClick={handleNext} disabled={!cues.length || sending}>다음 ▶</button>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 4 }}>
+        <button style={s.syncBtn(syncing)} onClick={handleSync} disabled={syncing}>
+          {syncing ? '동기화 중...' : 'MA2 동기화'}
+        </button>
       </div>
 
       <div style={s.addRow}>

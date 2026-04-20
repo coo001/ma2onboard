@@ -23,6 +23,7 @@ class MA2TelnetClient:
     def __init__(self):
         self._reader: Optional[asyncio.StreamReader] = None
         self._writer: Optional[asyncio.StreamWriter] = None
+        self._lock: asyncio.Lock = asyncio.Lock()
         self.host: str = ""
         self.port: int = MA2_DEFAULT_PORT
         self.connected: bool = False
@@ -44,6 +45,17 @@ class MA2TelnetClient:
             raw = await self._read_until(PROMPT, timeout=5.0)
         except Exception as e:
             return {"ok": False, "error": f"연결 직후 서버가 닫힘: {e}"}
+
+        # grandMA2는 초기 응답으로 [Cue]>를 두 번 보냄:
+        # 1) banner + [Cue]>  2) "Please login!" + [Cue]>
+        # 두 번째 [Cue]>까지 모두 소비해야 로그인 응답이 오염되지 않음
+        banner_text = _strip_ansi(raw.decode("utf-8", errors="replace"))
+        if "please login" not in banner_text.lower():
+            try:
+                extra = await self._read_until(PROMPT, timeout=1.5)
+                raw += extra
+            except Exception:
+                pass
 
         banner = _strip_ansi(raw.decode("utf-8", errors="replace")).strip()
         self.last_banner = banner
@@ -67,9 +79,13 @@ class MA2TelnetClient:
         resp = _strip_ansi(raw2.decode("utf-8", errors="replace")).strip()
         logger.info(f"[MA2 login response] {repr(resp)}")
 
-        if any(kw in resp.lower() for kw in ["denied", "wrong", "fail", "invalid", "login needed"]):
+        if any(kw in resp.lower() for kw in ["denied", "wrong", "fail", "invalid", "login needed", "please login", "incorrect"]):
             await self.disconnect()
-            return {"ok": False, "error": f"로그인 실패: {resp}"}
+            return {"ok": False, "error": f"로그인 실패 (사용자명/비밀번호를 확인하세요): {resp}"}
+
+        # 응답이 빈 프롬프트([Cue]>)이거나 "logged in" 포함 시 성공으로 판정
+        if resp and resp not in {"[cue]>", "[Cue]>"} and not any(kw in resp.lower() for kw in ["logged in", "executing"]):
+            logger.warning(f"[MA2] 예상치 못한 로그인 응답: {repr(resp)}")
 
         self.connected = True
         logger.info(f"[MA2] 로그인 성공 ✓")
@@ -89,21 +105,22 @@ class MA2TelnetClient:
     async def send_command(self, cmd: str) -> dict:
         if not self.connected or not self._writer:
             return {"ok": False, "error": "연결되지 않음"}
-        try:
-            self._writer.write(cmd.encode("utf-8") + b"\r\n")
-            await self._writer.drain()
-            raw = await self._read_until(PROMPT, timeout=CMD_TIMEOUT)
-            text = _strip_ansi(raw.decode("utf-8", errors="replace"))
-            lines = [l.strip() for l in text.splitlines()
-                     if l.strip() and l.strip() != cmd and not l.strip().endswith("]>")]
-            response = " | ".join(lines) if lines else ""
-            ok = not any(kw in response.lower()
-                         for kw in ["error", "syntax", "unknown", "invalid", "login needed"])
-            logger.info(f"[MA2 cmd] {repr(cmd)} → {repr(response)}")
-            return {"ok": ok, "command": cmd, "response": response}
-        except Exception as e:
-            self.connected = False
-            return {"ok": False, "error": str(e), "command": cmd}
+        async with self._lock:
+            try:
+                self._writer.write(cmd.encode("utf-8") + b"\r\n")
+                await self._writer.drain()
+                raw = await self._read_until(PROMPT, timeout=CMD_TIMEOUT)
+                text = _strip_ansi(raw.decode("utf-8", errors="replace"))
+                lines = [l.strip() for l in text.splitlines()
+                         if l.strip() and l.strip() != cmd and not l.strip().endswith("]>")]
+                response = " | ".join(lines) if lines else ""
+                ok = not any(kw in response.lower()
+                             for kw in ["error", "syntax", "unknown", "invalid", "login needed"])
+                logger.info(f"[MA2 cmd] {repr(cmd)} → {repr(response)}")
+                return {"ok": ok, "command": cmd, "response": response}
+            except Exception as e:
+                self.connected = False
+                return {"ok": False, "error": str(e), "command": cmd}
 
     async def _read_until(self, marker: bytes, timeout: float = 5.0) -> bytes:
         buf = b""
@@ -116,6 +133,24 @@ class MA2TelnetClient:
                 buf += chunk
             return buf
         return await asyncio.wait_for(_read(), timeout=timeout)
+
+
+    async def read_cue_list(self) -> list:
+        """MA2에서 큐 목록을 읽어 [{"number": str, "label": str}] 반환."""
+        if not self.connected:
+            return []
+        try:
+            result = await self.send_command("List Cue")
+            raw_text = result.get("response", "")
+            cues = []
+            pattern = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*(.*)')
+            for line in raw_text.split(" | "):
+                m = pattern.match(line.strip())
+                if m:
+                    cues.append({"number": m.group(1), "label": m.group(2).strip()})
+            return cues
+        except Exception:
+            return []
 
 
 ma2_client = MA2TelnetClient()

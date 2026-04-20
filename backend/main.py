@@ -35,6 +35,7 @@ try:
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_tilt,
@@ -51,6 +52,7 @@ except ImportError:
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_tilt,
@@ -297,7 +299,43 @@ async def list_cues():
         cues, migrated = _read_cues()
         if migrated:
             _write_cues(cues)
+    for c in cues:
+        c.setdefault("source", "web")
     return {"cues": cues}
+
+
+@app.post("/api/cues/sync")
+async def sync_cues():
+    if _bridge is not None:
+        return {"ok": False, "error": "브릿지 모드에서는 직접 sync를 지원하지 않습니다", "cues": [], "synced_count": 0}
+    if not ma2_client.connected:
+        return {"ok": False, "error": "MA2에 연결되어 있지 않습니다", "cues": [], "synced_count": 0}
+    try:
+        ma2_cues = await ma2_client.read_cue_list()
+    except Exception as e:
+        return {"ok": False, "cues": [], "synced_count": 0, "error": str(e)}
+
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+
+        # 기존 web 큐에 source 보장
+        for c in cues:
+            c.setdefault("source", "web")
+
+        existing = {c["number"]: c for c in cues}
+        synced_count = 0
+        for mc in ma2_cues:
+            num = mc["number"]
+            if num not in existing:
+                cues.append({"number": num, "label": mc["label"], "source": "ma2"})
+                synced_count += 1
+            # 이미 있는 큐는 cues.json 레이블 우선 — 변경 없음
+
+        _write_cues(cues)
+
+    return {"ok": True, "cues": cues, "synced_count": synced_count, "error": None}
 
 @app.post("/api/cues")
 async def add_cue(req: CueRequest):
@@ -310,7 +348,7 @@ async def add_cue(req: CueRequest):
             _write_cues(cues)
         if any(c["number"] == num for c in cues):
             return JSONResponse(status_code=400, content={"ok": False, "detail": "이미 존재하는 큐 번호입니다"})
-        cues.append({"number": num, "label": req.label or ""})
+        cues.append({"number": num, "label": req.label or "", "source": "web"})
         _write_cues(cues)
     return {"ok": True, "cues": cues}
 
@@ -453,6 +491,15 @@ async def wizard_clear_fixtures(req: ClearFixturesRequest):
         cmd_clear_selection(),
     ]
     return summarize_results(await send_commands(commands))
+
+
+class QRequest(BaseModel):
+    q: int = Field(..., ge=0, le=100)
+
+
+@app.post("/api/wizard/q")
+async def wizard_q(req: QRequest):
+    return await send_and_log(cmd_q(req.q))
 
 
 class AICommandRequest(BaseModel):

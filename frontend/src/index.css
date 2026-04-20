@@ -14,6 +14,9 @@
   --muted: #7a7f9a;
   --ok: #3ddc84;
   --err: #f26b6b;
+  --font-sm: 20px;
+  --font-md: 24px;
+  --font-lg: 32px;
 }
 
 html, body, #root {
@@ -24,7 +27,7 @@ html, body, #root {
     var(--bg);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 15px;
+  font-size: var(--font-md);
 }
 
 body {
@@ -49,7 +52,7 @@ input[type='number'] {
   color: var(--text);
   border-radius: 8px;
   padding: 8px 12px;
-  font-size: 15px;
+  font-size: var(--font-md);
   font-family: inherit;
   outline: none;
 }
@@ -62,7 +65,7 @@ input[type='number']:focus {
 .btn {
   padding: 10px 22px;
   border-radius: 10px;
-  font-size: 15px;
+  font-size: var(--font-md);
   font-weight: 700;
   transition: transform .08s ease, opacity .15s ease, background .15s ease;
 }
@@ -102,7 +105,7 @@ input[type='number']:focus {
 
 .btn-sm {
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 
 @keyframes pulse {

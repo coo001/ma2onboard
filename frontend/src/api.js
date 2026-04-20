@@ -57,4 +57,6 @@ export const api = {
   addCue: (cue_number, label = '') => post('/cues', { cue_number, label }),
   deleteCue: (cue_number) => request(`/cues/${encodeURIComponent(cue_number)}`, { method: 'DELETE' }),
   executeCue: (cue_number) => post(`/cues/${encodeURIComponent(cue_number)}/execute`, {}),
+  syncCues: () => post('/cues/sync', {}),
+  setQ: (q) => post('/wizard/q', { q }),
 }

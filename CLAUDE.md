@@ -27,6 +27,16 @@ cd backend && uvicorn main:app --reload --host 0.0.0.0 --port 8000
 cd frontend && npm run dev
 ```
 
+## 개발 역할 분리 (Agent Workflow)
+
+모든 기능 개발은 아래 3단계 역할을 순서대로 거친다.
+
+1. **설계자 (Plan agent)** — 구현 전 변경 파일 목록, 데이터 흐름, 인터페이스를 먼저 제시. 사용자 승인 후 다음 단계 진행.
+2. **구현자 (Implementer agent)** — 설계서를 받아 실제 코드를 작성. 설계 범위를 벗어난 추가 구현 금지.
+3. **리뷰어 (Reviewer agent)** — 구현된 코드의 버그, 보안 문제, 설계 위반, 엣지 케이스를 검토. 문제 발견 시 구현자에게 재작업 요청.
+
+> 역할은 `subagent_type: Plan / implementer / reviewer` 에이전트로 실행한다.
+
 ## Engineering Principles
 - Minimal patch first: 작동하는 가장 단순한 버전을 먼저 만든다
 - Plan before code: 구현 전 변경 파일 목록과 흐름을 먼저 제시한다
