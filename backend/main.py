@@ -12,12 +12,13 @@ import asyncio
 import json
 import logging
 import os
+import re
 import uuid as _uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -68,6 +69,23 @@ ws_clients: List[WebSocket] = []
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = PROJECT_ROOT / "frontend" / "dist"
 BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8000")
+
+GROUPS_FILE = Path(__file__).resolve().parent / "groups.json"
+_groups_lock = asyncio.Lock()
+
+_GROUP_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _read_groups() -> dict:
+    if not GROUPS_FILE.exists():
+        return {}
+    with GROUPS_FILE.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _write_groups(data: dict) -> None:
+    with GROUPS_FILE.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 class BridgeSession:
@@ -207,6 +225,40 @@ class RawCommandRequest(BaseModel):
 
 class ClearFixturesRequest(BaseModel):
     fixture_numbers: List[int] = Field(min_length=1)
+
+
+class GroupRequest(BaseModel):
+    name: str
+    fixture_numbers: List[int] = Field(min_length=1)
+
+
+@app.post("/api/groups")
+async def create_group(req: GroupRequest):
+    if not _GROUP_NAME_RE.match(req.name):
+        raise HTTPException(status_code=400, detail="그룹명은 영숫자, 하이픈, 언더스코어만 허용됩니다.")
+    async with _groups_lock:
+        groups = _read_groups()
+        groups[req.name] = req.fixture_numbers
+        _write_groups(groups)
+    return {"ok": True, "group": {"name": req.name, "fixture_numbers": req.fixture_numbers}}
+
+
+@app.get("/api/groups")
+async def list_groups():
+    async with _groups_lock:
+        groups = _read_groups()
+    return {"groups": [{"name": k, "fixture_numbers": v} for k, v in groups.items()]}
+
+
+@app.delete("/api/groups/{name}")
+async def delete_group(name: str):
+    async with _groups_lock:
+        groups = _read_groups()
+        if name not in groups:
+            raise HTTPException(status_code=404, detail=f"그룹 '{name}'을 찾을 수 없습니다.")
+        del groups[name]
+        _write_groups(groups)
+    return {"ok": True, "deleted": name}
 
 
 @app.post("/api/connect")
