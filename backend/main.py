@@ -31,10 +31,12 @@ try:
         cmd_clear_selection,
         cmd_color_preset,
         cmd_color_rgb,
+        cmd_delete_cue,
         cmd_focus,
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_save_show,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_tilt,
@@ -47,10 +49,12 @@ except ImportError:
         cmd_clear_selection,
         cmd_color_preset,
         cmd_color_rgb,
+        cmd_delete_cue,
         cmd_focus,
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_save_show,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_tilt,
@@ -454,6 +458,14 @@ async def ai_command_endpoint(req: AICommandRequest):
     if parsed.get("store_cue"):
         await send_and_log(cmd_store_cue(str(parsed["store_cue"])))
         actions.append(f"큐 {parsed['store_cue']}번 저장")
+
+    if parsed.get("delete_cue") is not None:
+        await send_and_log(cmd_delete_cue(str(parsed["delete_cue"])))
+        actions.append(f"큐 {parsed['delete_cue']}번 삭제")
+
+    if parsed.get("save_show"):
+        await send_and_log(cmd_save_show())
+        actions.append("쇼 저장")
 
     ai_update(fixtures, parsed)
 

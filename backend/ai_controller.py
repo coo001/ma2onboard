@@ -54,8 +54,10 @@ _SYSTEM = """\
   "color": {"r": 100, "g": 0, "b": 0},
   "pan": 50,
   "tilt": 65,
-  "focus": 0,
+  "focus": null,
   "store_cue": null,
+  "delete_cue": null,
+  "save_show": false,
   "explanation": "한국어로 실행 내용 설명"
 }
 
@@ -89,6 +91,8 @@ _SYSTEM = """\
 - "조금"=±15, "많이/크게"=±30
 - "포커스 풀고/초점 없애고/흐릿하게" = focus=0
 - "포커스 최대/선명하게" = focus=100
+- "포커스 올리기/높이기/올려줘" = 현재 focus+15 (0-100 클램핑)
+- "포커스 낮추기/내리기/내려줘" = 현재 focus-15 (0-100 클램핑)
 
 ## 조명 번호 파싱
 - "1번 조명" → fixtures=[1]
