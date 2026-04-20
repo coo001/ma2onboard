@@ -104,3 +104,8 @@ input[type='number']:focus {
   padding: 7px 14px;
   font-size: 13px;
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .4; transform: scale(1.3); }
+}

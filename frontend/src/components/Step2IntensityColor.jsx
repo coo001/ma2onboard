@@ -1,6 +1,33 @@
 import { useState } from 'react'
 import { api } from '../api'
-import MAColorPicker from './MAColorPicker'
+
+const STAGE_COLORS = [
+  { name: '화이트',   rgb: [100, 100, 100] },
+  { name: '웜화이트', rgb: [100, 78, 38] },
+  { name: '쿨화이트', rgb: [85, 95, 100] },
+  { name: '레드',     rgb: [100, 0, 0] },
+  { name: '오렌지',   rgb: [100, 38, 0] },
+  { name: '앰버',     rgb: [100, 55, 0] },
+  { name: '옐로우',   rgb: [100, 100, 0] },
+  { name: '라임',     rgb: [40, 100, 0] },
+  { name: '그린',     rgb: [0, 100, 0] },
+  { name: '시안',     rgb: [0, 100, 100] },
+  { name: '블루',     rgb: [0, 0, 100] },
+  { name: '로열블루', rgb: [0, 20, 100] },
+  { name: '퍼플',     rgb: [60, 0, 100] },
+  { name: '마젠타',   rgb: [100, 0, 100] },
+]
+
+const INTENSITY_PRESETS = [0, 25, 50, 75, 100]
+
+function rgb100ToHex(r, g, b) {
+  const toHex = (v) => Math.round((v / 100) * 255).toString(16).padStart(2, '0')
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+}
+
+function isSameRgb(a, b) {
+  return a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+}
 
 const styles = {
   wrap: { padding: '32px 40px' },
@@ -62,14 +89,42 @@ const styles = {
   }),
   feedback: { fontSize: 12 },
   toggleRow: { marginBottom: 14 },
+  colorGrid: { display: 'flex', gap: 10, flexWrap: 'wrap' },
+  colorBtn: (hex, active) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 5,
+    padding: '10px 12px',
+    borderRadius: 10,
+    border: `2px solid ${active ? '#f0a500' : '#2e334d'}`,
+    background: active ? '#2a2000' : '#22263a',
+    cursor: 'pointer',
+    minWidth: 68,
+    boxShadow: active ? '0 0 0 2px rgba(240,165,0,.2)' : 'none',
+  }),
+  colorSwatch: (hex) => ({
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    background: hex,
+    border: '1px solid rgba(255,255,255,.12)',
+  }),
+  colorName: (active) => ({
+    fontSize: 11,
+    fontWeight: 700,
+    color: active ? '#f0a500' : '#a0a4bc',
+    whiteSpace: 'nowrap',
+  }),
+  selectedColor: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    fontSize: 13,
+    color: '#a0a4bc',
+  },
   note: { fontSize: 12, color: '#7a7f9a', lineHeight: 1.7, marginTop: 12 },
-}
-
-const INTENSITY_PRESETS = [0, 25, 50, 75, 100]
-
-function rgb100ToHex(r, g, b) {
-  const toHex = (value) => Math.round((value / 100) * 255).toString(16).padStart(2, '0')
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
 
 export default function Step2IntensityColor({ data, onNext, onBack }) {
@@ -98,13 +153,9 @@ export default function Step2IntensityColor({ data, onNext, onBack }) {
     if (!useColor) return
     setRgb(nextRgb)
     setSending((prev) => ({ ...prev, color: true }))
-    const result = await api.intensityColor(intensity, null, {
-      r: nextRgb[0],
-      g: nextRgb[1],
-      b: nextRgb[2],
-    })
+    const result = await api.intensityColor(intensity, null, { r: nextRgb[0], g: nextRgb[1], b: nextRgb[2] })
     setSending((prev) => ({ ...prev, color: false }))
-    setFb('color', result.ok === false ? result.error : '색 정보가 적용되었습니다.', result.ok !== false)
+    setFb('color', result.ok === false ? result.error : '색이 적용되었습니다.', result.ok !== false)
   }
 
   function handleIntensityBlur() {
@@ -128,12 +179,14 @@ export default function Step2IntensityColor({ data, onNext, onBack }) {
     })
   }
 
+  const activeColor = STAGE_COLORS.find((c) => isSameRgb(c.rgb, rgb))
+
   return (
     <div style={styles.wrap}>
       <div style={styles.stepBadge}>2 / 4 단계</div>
       <div style={styles.title}>밝기와 색을 잡아보세요</div>
       <div style={styles.subtitle}>
-        밝기는 빠르게 프리셋으로, 색은 grandMA2 느낌의 picker로 맞추도록 구성했습니다.
+        밝기는 프리셋으로, 색은 무대 조명에서 자주 쓰는 색 버튼으로 빠르게 맞출 수 있습니다.
       </div>
 
       <div style={styles.guide}>
@@ -142,12 +195,8 @@ export default function Step2IntensityColor({ data, onNext, onBack }) {
       </div>
 
       <div style={styles.topActions}>
-        <button className="btn btn-secondary" onClick={onBack}>
-          이전
-        </button>
-        <button className="btn btn-primary" onClick={handleNext}>
-          다음
-        </button>
+        <button className="btn btn-secondary" onClick={onBack}>이전</button>
+        <button className="btn btn-primary" onClick={handleNext}>다음</button>
       </div>
 
       <div style={styles.context}>
@@ -167,9 +216,9 @@ export default function Step2IntensityColor({ data, onNext, onBack }) {
             min={0}
             max={100}
             value={intensityInput}
-            onChange={(event) => setIntensityInput(event.target.value)}
+            onChange={(e) => setIntensityInput(e.target.value)}
             onBlur={handleIntensityBlur}
-            onKeyDown={(event) => event.key === 'Enter' && handleIntensityBlur()}
+            onKeyDown={(e) => e.key === 'Enter' && handleIntensityBlur()}
           />
           <span style={styles.pct}>%</span>
           {sending.intensity && <span style={{ color: '#7a7f9a', fontSize: 13 }}>전송 중...</span>}
@@ -192,27 +241,54 @@ export default function Step2IntensityColor({ data, onNext, onBack }) {
       <div style={styles.section}>
         <div style={styles.sectionTitle}>색</div>
         <div style={styles.sectionDesc}>
-          official grandMA2 Color Picker 문서의 구성을 참고해 HSB, Raw Faders, Predefined Colors 중심으로 맞춘 picker입니다.
+          무대 조명에서 자주 쓰는 색을 버튼으로 빠르게 선택하세요.
         </div>
 
         <div style={styles.toggleRow}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer' }}>
-            <input type="checkbox" checked={useColor} onChange={(event) => setUseColor(event.target.checked)} />
+            <input type="checkbox" checked={useColor} onChange={(e) => setUseColor(e.target.checked)} />
             색 설정 사용
           </label>
         </div>
 
-        {useColor && <MAColorPicker rgb={rgb} onChange={sendColor} disabled={sending.color} />}
+        {useColor && (
+          <>
+            <div style={styles.colorGrid}>
+              {STAGE_COLORS.map((color) => {
+                const hex = rgb100ToHex(...color.rgb)
+                const active = isSameRgb(color.rgb, rgb)
+                return (
+                  <button
+                    key={color.name}
+                    style={styles.colorBtn(hex, active)}
+                    onClick={() => sendColor(color.rgb)}
+                    disabled={sending.color}
+                  >
+                    <div style={styles.colorSwatch(hex)} />
+                    <span style={styles.colorName(active)}>{color.name}</span>
+                  </button>
+                )
+              })}
+            </div>
 
-        {feedback.color && (
-          <div style={{ ...styles.note, color: feedback.color.ok ? '#3ddc84' : '#f26b6b' }}>
-            {feedback.color.message}
-          </div>
+            <div style={styles.selectedColor}>
+              {activeColor ? (
+                <>
+                  <div style={{ ...styles.colorSwatch(rgb100ToHex(...rgb)), width: 18, height: 18 }} />
+                  <span>선택된 색: <strong style={{ color: '#f0a500' }}>{activeColor.name}</strong></span>
+                </>
+              ) : (
+                <span style={{ color: '#7a7f9a' }}>색을 선택하세요</span>
+              )}
+              {sending.color && <span style={{ color: '#7a7f9a', fontSize: 12 }}>전송 중...</span>}
+              {feedback.color && (
+                <span style={{ fontSize: 12, color: feedback.color.ok ? '#3ddc84' : '#f26b6b' }}>
+                  {feedback.color.message}
+                </span>
+              )}
+            </div>
+          </>
         )}
-
-        <div style={styles.note}>
-          참고: 공식 grandMA2 Color Picker는 HSB, Swatch Book, Raw Faders, Predefined Colors, Faders 뷰를 제공합니다.
-        </div>
       </div>
     </div>
   )

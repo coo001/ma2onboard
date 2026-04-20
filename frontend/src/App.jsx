@@ -101,7 +101,7 @@ export default function App() {
 
   return (
     <div style={s.layout}>
-      <ConnectBar connected={connected} onDisconnect={handleDisconnect} autoInfo={AUTO} />
+      <ConnectBar connected={connected} onDisconnect={handleDisconnect} autoInfo={AUTO} autoStatus={autoStatus} />
 
       <div style={s.main}>
         {!connected ? (

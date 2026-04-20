@@ -1,5 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '../api'
+
+const STORAGE_KEY = 'gma2_presets'
+
+function loadPresets() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function savePresets(presets) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(presets))
+  } catch {
+    // 시크릿 모드 등 localStorage 비활성 환경 무시
+  }
+}
 
 const styles = {
   wrap: { padding: '32px 40px' },
@@ -48,12 +66,74 @@ const styles = {
   selected: { fontSize: 15, marginBottom: 14, color: '#a0a4bc' },
   selectedNums: { color: '#f0a500', fontWeight: 800 },
   err: { color: '#f26b6b', fontSize: 13, marginBottom: 12 },
+  presetSection: {
+    background: '#1a1d27',
+    border: '1px solid #2e334d',
+    borderRadius: 12,
+    padding: '14px 18px',
+    marginBottom: 18,
+  },
+  presetHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 10,
+    fontSize: 13,
+    fontWeight: 700,
+    color: '#a0a4bc',
+  },
+  presetList: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  presetItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    background: '#22263a',
+    border: '1px solid #2e334d',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  presetLoad: {
+    padding: '5px 10px',
+    background: 'transparent',
+    color: '#e8eaf0',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: 'none',
+  },
+  presetDel: {
+    padding: '5px 8px',
+    background: 'transparent',
+    color: '#7a7f9a',
+    fontSize: 12,
+    cursor: 'pointer',
+    border: 'none',
+    borderLeft: '1px solid #2e334d',
+  },
+  saveRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
+  nameInput: {
+    flex: 1,
+    maxWidth: 180,
+    fontSize: 13,
+    padding: '5px 10px',
+    background: '#22263a',
+    border: '1px solid #2e334d',
+    borderRadius: 8,
+    color: '#e8eaf0',
+  },
 }
 
 export default function Step1Fixtures({ onNext }) {
   const [selected, setSelected] = useState(new Set())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [presets, setPresets] = useState(loadPresets)
+  const [savingName, setSavingName] = useState('')
+  const [showSaveInput, setShowSaveInput] = useState(false)
+
+  useEffect(() => {
+    savePresets(presets)
+  }, [presets])
 
   function toggle(number) {
     setSelected((prev) => {
@@ -62,6 +142,23 @@ export default function Step1Fixtures({ onNext }) {
       else next.add(number)
       return next
     })
+  }
+
+  function handleSavePreset() {
+    const name = savingName.trim()
+    if (!name || selected.size === 0) return
+    const fixtures = Array.from(selected).sort((a, b) => a - b)
+    setPresets((prev) => [...prev.slice(-7), { name, fixtures }])
+    setSavingName('')
+    setShowSaveInput(false)
+  }
+
+  function handleLoadPreset(preset) {
+    setSelected(new Set(preset.fixtures))
+  }
+
+  function handleDeletePreset(index) {
+    setPresets((prev) => prev.filter((_, i) => i !== index))
   }
 
   async function handleNext() {
@@ -137,6 +234,58 @@ export default function Step1Fixtures({ onNext }) {
           </span>
         ) : (
           '아직 없음'
+        )}
+      </div>
+
+      <div style={styles.presetSection}>
+        <div style={styles.presetHeader}>
+          저장된 프리셋
+          {selected.size > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowSaveInput((v) => !v)}
+            >
+              + 현재 조합 저장
+            </button>
+          )}
+        </div>
+
+        {showSaveInput && (
+          <div style={styles.saveRow}>
+            <input
+              style={styles.nameInput}
+              type="text"
+              placeholder="프리셋 이름 (예: 메인 조명)"
+              value={savingName}
+              onChange={(e) => setSavingName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSavePreset()}
+              autoFocus
+            />
+            <button className="btn btn-primary btn-sm" onClick={handleSavePreset} disabled={!savingName.trim()}>
+              저장
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={() => { setShowSaveInput(false); setSavingName('') }}>
+              취소
+            </button>
+          </div>
+        )}
+
+        {presets.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#7a7f9a' }}>저장된 프리셋이 없습니다. 조명 조합을 선택 후 저장해보세요.</div>
+        ) : (
+          <div style={styles.presetList}>
+            {presets.map((preset, index) => (
+              <div key={index} style={styles.presetItem}>
+                <button style={styles.presetLoad} onClick={() => handleLoadPreset(preset)} title={`${preset.fixtures.join(', ')}번`}>
+                  {preset.name}
+                  <span style={{ color: '#7a7f9a', fontWeight: 400, marginLeft: 4 }}>({preset.fixtures.join(',')})</span>
+                </button>
+                <button style={styles.presetDel} onClick={() => handleDeletePreset(index)} title="삭제">
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
