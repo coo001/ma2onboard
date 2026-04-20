@@ -364,6 +364,40 @@ class AICommandRequest(BaseModel):
     text: str
 
 
+async def _apply_fixture_group(group: dict, actions: list[str]) -> None:
+    """scene_fixtures 배열의 단일 그룹을 실행하고 상태를 갱신한다."""
+    fixtures: list[int] = group.get("fixtures") or []
+    if not fixtures:
+        return
+
+    await send_and_log(cmd_select_fixtures(fixtures))
+    actions.append(f"조명 {fixtures}번 선택")
+
+    if group.get("intensity") is not None:
+        await send_and_log(cmd_intensity(int(group["intensity"])))
+        actions.append(f"밝기 {group['intensity']}%")
+
+    color = group.get("color")
+    if color:
+        for cmd in cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])):
+            await send_and_log(cmd)
+        actions.append(f"색상 RGB({color['r']}, {color['g']}, {color['b']})")
+
+    if group.get("pan") is not None:
+        await send_and_log(cmd_pan(int(group["pan"])))
+        actions.append(f"Pan {group['pan']}")
+
+    if group.get("tilt") is not None:
+        await send_and_log(cmd_tilt(int(group["tilt"])))
+        actions.append(f"Tilt {group['tilt']}")
+
+    if group.get("store_cue"):
+        await send_and_log(cmd_store_cue(str(group["store_cue"])))
+        actions.append(f"큐 {group['store_cue']}번 저장")
+
+    ai_update(fixtures, group)
+
+
 @app.post("/api/ai-command")
 async def ai_command_endpoint(req: AICommandRequest):
     if not req.text.strip():
@@ -373,8 +407,23 @@ async def ai_command_endpoint(req: AICommandRequest):
     except Exception as exc:
         return {"ok": False, "error": f"AI 파싱 실패: {exc}"}
 
-    fixtures: list[int] = parsed.get("fixtures") or []
     actions: list[str] = []
+
+    if parsed.get("mode") == "scene":
+        scene_fixtures: list[dict] = parsed.get("scene_fixtures") or []
+        if not scene_fixtures:
+            return {"ok": False, "error": "씬 파싱 결과가 없습니다.", "parsed": parsed}
+        for group in scene_fixtures:
+            await _apply_fixture_group(group, actions)
+        return {
+            "ok": True,
+            "explanation": parsed.get("explanation", ""),
+            "actions": actions,
+            "parsed": parsed,
+        }
+
+    # command 모드 (기존 로직)
+    fixtures: list[int] = parsed.get("fixtures") or []
 
     if fixtures:
         await send_and_log(cmd_select_fixtures(fixtures))
@@ -386,7 +435,8 @@ async def ai_command_endpoint(req: AICommandRequest):
 
     color = parsed.get("color")
     if color:
-        await send_commands(cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])))
+        for cmd in cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])):
+            await send_and_log(cmd)
         actions.append(f"색상 RGB({color['r']}, {color['g']}, {color['b']})")
 
     if parsed.get("pan") is not None:
