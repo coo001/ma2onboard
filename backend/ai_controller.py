@@ -1,5 +1,6 @@
 """AI natural language → grandMA2 command parser (OpenAI backend)."""
 import json
+from pathlib import Path
 
 try:
     from dotenv import load_dotenv
@@ -8,6 +9,27 @@ except ImportError:
     pass
 
 from openai import AsyncOpenAI
+
+_GROUPS_FILE = Path(__file__).resolve().parent / "groups.json"
+
+
+def _load_groups() -> dict:
+    if not _GROUPS_FILE.exists():
+        return {}
+    with _GROUPS_FILE.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _substitute_groups(text: str) -> str:
+    """텍스트에서 그룹명을 fixture 번호 목록으로 치환한다. 긴 이름 우선."""
+    groups = _load_groups()
+    if not groups:
+        return text
+    for name in sorted(groups.keys(), key=len, reverse=True):
+        if name in text:
+            nums = ", ".join(str(n) for n in groups[name])
+            text = text.replace(name, f"{nums}번 조명")
+    return text
 
 _client = AsyncOpenAI()
 
@@ -87,6 +109,7 @@ def update_states(fixtures: list[int], parsed: dict) -> None:
 
 async def parse_command(text: str) -> dict:
     """한국어 조명 명령을 파싱해 구조화된 dict 반환."""
+    text = _substitute_groups(text)
     state_lines = []
     for f in sorted(_states.keys()):
         s = _states[f]
