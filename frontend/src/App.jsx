@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import ConnectBar from './components/ConnectBar'
 import AIChat from './components/AIChat'
 import QuickPanel from './components/QuickPanel'
-import CommandLog from './components/CommandLog'
 import { api } from './api'
 
 const AUTO = { host: '127.0.0.1', port: 30000, user: 'administrator', password: 'admin' }
@@ -30,7 +29,7 @@ export default function App() {
   const [connected, setConnected] = useState(false)
   const [autoStatus, setAutoStatus] = useState('connecting')
   const [autoError, setAutoError] = useState('')
-  const [logs, setLogs] = useState([])
+
   const [selectedFixtures, setSelectedFixtures] = useState([])
   const wsRef = useRef(null)
 
@@ -46,12 +45,12 @@ export default function App() {
 
   useEffect(() => {
     function connectWS() {
-      const ws = new WebSocket(`ws://${location.host}/ws/log`)
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const ws = new WebSocket(`${protocol}//${location.host}/ws/log`)
       wsRef.current = ws
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data)
-        if (msg.type === 'cmd_log') setLogs(prev => [...prev.slice(-199), msg])
-        else if (msg.type === 'connection') setConnected(msg.connected)
+        if (msg.type === 'connection') setConnected(msg.connected)
         else if (msg.type === 'bridge_status' && !msg.active) setConnected(false)
       }
       ws.onclose = () => setTimeout(connectWS, 2000)
@@ -118,7 +117,6 @@ export default function App() {
         )}
       </div>
 
-      <CommandLog logs={logs} connected={connected} />
     </div>
   )
 }
