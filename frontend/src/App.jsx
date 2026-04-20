@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import ConnectBar from './components/ConnectBar'
 import AIChat from './components/AIChat'
+import QuickPanel from './components/QuickPanel'
 import CommandLog from './components/CommandLog'
 import { api } from './api'
 
@@ -30,6 +31,7 @@ export default function App() {
   const [autoStatus, setAutoStatus] = useState('connecting')
   const [autoError, setAutoError] = useState('')
   const [logs, setLogs] = useState([])
+  const [selectedFixtures, setSelectedFixtures] = useState([])
   const wsRef = useRef(null)
 
   useEffect(() => {
@@ -109,7 +111,10 @@ export default function App() {
             <div style={s.overlayCard}>{overlayContent}</div>
           </div>
         ) : (
-          <AIChat connected={connected} />
+          <>
+            <QuickPanel fixtures={selectedFixtures} onFixturesChange={setSelectedFixtures} />
+            <AIChat connected={connected} />
+          </>
         )}
       </div>
 
