@@ -410,7 +410,7 @@ async def ai_command_endpoint(req: AICommandRequest):
         actions.append(f"큐 {parsed['store_cue']}번 저장")
 
     if parsed.get("delete_cue") is not None:
-        await send_and_log(cmd_delete_cue(str(parsed["delete_cue"])))
+        await send_commands([cmd_delete_cue(str(parsed["delete_cue"])), ""])
         actions.append(f"큐 {parsed['delete_cue']}번 삭제")
 
     if parsed.get("save_show"):
