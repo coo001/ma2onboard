@@ -49,4 +49,7 @@ export const api = {
   clearFixtures: (fixture_numbers) => post('/wizard/clear-fixtures', { fixture_numbers }),
   rawCommand: (command) => post('/command', { command }),
   aiCommand: (text) => post('/ai-command', { text }),
+  getGroups: () => get('/groups'),
+  createGroup: (name, fixture_numbers) => post('/groups', { name, fixture_numbers }),
+  deleteGroup: (name) => request(`/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
 }

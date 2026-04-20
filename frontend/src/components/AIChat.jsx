@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { api } from '../api'
+import GroupPanel from './GroupPanel'
 
 const EXAMPLES = [
   '1번 조명 최대 밝기로 켜줘',
@@ -136,8 +137,14 @@ export default function AIChat({ connected }) {
 
   const canSend = connected && !loading && input.trim().length > 0
 
+  function insertGroup(groupName) {
+    setInput(prev => prev ? `${prev} ${groupName}` : groupName)
+    inputRef.current?.focus()
+  }
+
   return (
     <div style={s.wrap}>
+      <GroupPanel onInsert={insertGroup} />
       <div style={s.messages}>
         {messages.map(msg => (
           <div key={msg.id} style={s.bubble(msg.role)}>
