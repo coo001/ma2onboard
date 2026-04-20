@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 dist/
+!frontend/dist/
+!frontend/dist/**
 build/
 *.spec.bak
 .env
