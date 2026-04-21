@@ -39,7 +39,7 @@ export default function App() {
     async function autoConnect() {
       setAutoStatus('connecting')
       const r = await api.connect(AUTO.host, AUTO.port, AUTO.user, AUTO.password)
-      if (r.ok) { setConnected(true); setAutoStatus('ok') }
+      if (r.ok) { setConnected(true); setAutoStatus('ok'); api.syncCues().catch(() => {}).then(() => setCueRefreshKey(k => k + 1)) }
       else { setConnected(false); setAutoStatus('error'); setAutoError(r.error || '연결 실패') }
     }
     autoConnect()
@@ -58,7 +58,7 @@ export default function App() {
           else {
             // bridge 연결되면 자동 재연결
             api.connect(AUTO.host, AUTO.port, AUTO.user, AUTO.password).then(r => {
-              if (r.ok) { setConnected(true); setAutoStatus('ok') }
+              if (r.ok) { setConnected(true); setAutoStatus('ok'); api.syncCues().catch(() => {}).then(() => setCueRefreshKey(k => k + 1)) }
             })
           }
         }
@@ -73,7 +73,10 @@ export default function App() {
     setAutoStatus('connecting')
     setAutoError('')
     const r = await api.connect(AUTO.host, AUTO.port, AUTO.user, AUTO.password)
-    if (r.ok) { setConnected(true); setAutoStatus('ok') }
+    if (r.ok) {
+      setConnected(true); setAutoStatus('ok')
+      api.syncCues().catch(() => {}).then(() => setCueRefreshKey(k => k + 1))
+    }
     else { setAutoStatus('error'); setAutoError(r.error || '연결 실패') }
   }
 

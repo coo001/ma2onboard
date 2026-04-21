@@ -143,11 +143,12 @@ class MA2TelnetClient:
             result = await self.send_command("List Cue")
             raw_text = result.get("response", "")
             cues = []
-            pattern = re.compile(r'^\s*(\d+(?:\.\d+)?)\s*(.*)')
+            # MA2 응답 형식: "Cue   1 1  *  Go  Normal  None  Infinite  Infinite  (1)"
+            pattern = re.compile(r'^Cue\s+(\d+(?:\.\d+)?)\b', re.IGNORECASE)
             for line in raw_text.split(" | "):
                 m = pattern.match(line.strip())
                 if m:
-                    cues.append({"number": m.group(1), "label": m.group(2).strip()})
+                    cues.append({"number": m.group(1), "label": ""})
             return cues
         except Exception:
             return []

@@ -31,7 +31,9 @@ try:
         cmd_clear_selection,
         cmd_color_preset,
         cmd_color_rgb,
+        cmd_delete_cue,
         cmd_focus,
+        cmd_goto_cue,
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
@@ -48,7 +50,9 @@ except ImportError:
         cmd_clear_selection,
         cmd_color_preset,
         cmd_color_rgb,
+        cmd_delete_cue,
         cmd_focus,
+        cmd_goto_cue,
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
@@ -364,13 +368,18 @@ async def delete_cue(cue_number: str):
             raise HTTPException(status_code=404, detail=f"큐 '{cue_number}'를 찾을 수 없습니다.")
         cues = [c for c in cues if c["number"] != cue_number]
         _write_cues(cues)
+    await send_and_log(cmd_delete_cue(cue_number))
     return {"ok": True, "cues": cues}
 
+class ExecuteCueRequest(BaseModel):
+    fade: float = 0.0
+
 @app.post("/api/cues/{cue_number}/execute")
-async def execute_cue(cue_number: str):
+async def execute_cue(cue_number: str, req: ExecuteCueRequest = None):
     if not re.match(r'^\d+(\.\d+)?$', cue_number.strip()):
         raise HTTPException(status_code=400, detail="큐 번호는 숫자 형식이어야 합니다.")
-    return await send_and_log(f"Cue {cue_number} Go")
+    fade = req.fade if req else 0.0
+    return await send_and_log(cmd_goto_cue(cue_number, fade))
 
 
 @app.post("/api/connect")

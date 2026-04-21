@@ -220,14 +220,20 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
 
   async function handleStoreCue() {
     if (!cueNum.trim() || sending) return
+    const nums = cueNum.split(/[\s,]+/).map(n => n.trim()).filter(n => /^\d+(\.\d+)?$/.test(n))
+    if (nums.length === 0) { setFb('유효한 큐 번호를 입력하세요.', false); return }
     setSending(true)
-    const result = await api.storeCue(cueNum.trim())
+    const failed = []
+    for (const n of nums) {
+      const result = await api.storeCue(n)
+      if (!result || result.ok === false) failed.push(n)
+      else api.addCue(n)
+    }
     setSending(false)
-    if (!result || result.ok === false) {
-      setFb(result?.error || '저장 실패', false)
+    if (failed.length > 0) {
+      setFb(`큐 ${failed.join(', ')} 저장 실패`, false)
     } else {
-      setFb(`큐 ${cueNum.trim()} 저장 완료.`, true)
-      api.addCue(cueNum.trim())
+      setFb(`큐 ${nums.join(', ')} 저장 완료.`, true)
       onCueStored?.()
       setCueNum('')
     }
@@ -326,9 +332,9 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
         </div>
       </div>
 
-      {/* Focus */}
+      {/* Zoom */}
       <div style={s.row}>
-        <span style={s.label}>Focus</span>
+        <span style={s.label}>Zoom</span>
         <div style={s.sliderWrap}>
           <input type="range" min={0} max={100} value={focus} style={s.slider}
             onChange={(e) => setFocus(Number(e.target.value))}
@@ -360,7 +366,7 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
         <input
           style={s.cueInput}
           type="text"
-          placeholder="큐 번호"
+          placeholder="1, 2, 3"
           value={cueNum}
           onChange={e => setCueNum(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleStoreCue()}

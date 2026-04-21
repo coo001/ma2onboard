@@ -56,11 +56,21 @@ def cmd_tilt(value: int) -> str:
 
 def cmd_focus(value: int) -> str:
     value = max(0, min(100, value))
-    return 'Attribute "Focus" At {value}'.format(value=value)
+    return 'Attribute "Zoom" At {value}'.format(value=value)
 
 
 def cmd_store_cue(cue_number: str) -> str:
     return f"Store Cue {cue_number}"
+
+
+def cmd_delete_cue(cue_number: str) -> str:
+    return f"Delete Cue {cue_number}"
+
+
+def cmd_goto_cue(cue_number: str, fade: float = 0.0) -> str:
+    if fade > 0:
+        return f"Goto Cue {cue_number} Fade {fade}"
+    return f"Goto Cue {cue_number}"
 
 
 def cmd_clear_all() -> str:
