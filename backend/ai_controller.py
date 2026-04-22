@@ -124,6 +124,8 @@ def update_states(fixtures: list[int], parsed: dict) -> None:
             s["tilt"] = int(parsed["tilt"])
         if parsed.get("focus") is not None:
             s["focus"] = int(parsed["focus"])
+        if parsed.get("effect") is not None:
+            s["effect"] = parsed["effect"]
 
 
 async def parse_command(text: str) -> dict:

@@ -44,6 +44,8 @@ export const api = {
   intensityColor: (intensity, color_preset, color_rgb) =>
     post('/wizard/intensity-color', { intensity, color_preset, color_rgb }),
   position: (pan, tilt, focus) => post('/wizard/position', { pan, tilt, focus }),
+  effect: (mode, strobe, slot, value, tempo, high, low) =>
+    post('/wizard/effect', { mode, strobe, slot, value, tempo, high, low }),
   storeCue: (cue_number) => post('/wizard/store-cue', { cue_number }),
   clear: () => post('/wizard/clear', {}),
   clearFixtures: (fixture_numbers) => post('/wizard/clear-fixtures', { fixture_numbers }),

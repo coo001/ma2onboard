@@ -89,3 +89,39 @@ def cmd_off_fixtures(fixture_numbers: List[int]) -> str:
 def cmd_q(value: int) -> str:
     value = max(0, min(100, value))
     return f'Attribute "Q" At {value}'
+
+
+def cmd_strobe(value: int) -> str:
+    """Strobe speed via Shutter attribute. 0 = off, 100 = fastest."""
+    value = max(0, min(100, value))
+    return f'Attribute "Shutter" At {value}'
+
+
+def cmd_effect_slot(slot: int, value: int) -> str:
+    """Run a pre-saved Effect pool entry. slot: 1..99, value: 0..100."""
+    slot = max(1, min(99, slot))
+    value = max(0, min(100, value))
+    return f"Effect {slot} At {value}"
+
+
+def cmd_effect_off() -> str:
+    """Release effects on currently selected fixtures."""
+    return "Off Effect"
+
+
+def cmd_effect_rate(value: int) -> str:
+    """Effect tempo/rate. 0..100 percent of max speed."""
+    value = max(0, min(100, value))
+    return f'Attribute "EffRate" At {value}'
+
+
+def cmd_effect_high(value: int) -> str:
+    """Effect high boundary. 0..100."""
+    value = max(0, min(100, value))
+    return f'Attribute "EffHigh" At {value}'
+
+
+def cmd_effect_low(value: int) -> str:
+    """Effect low boundary. 0..100."""
+    value = max(0, min(100, value))
+    return f'Attribute "EffLow" At {value}'

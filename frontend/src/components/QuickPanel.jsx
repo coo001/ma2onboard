@@ -149,6 +149,10 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
   const [pan, setPan] = useState(50)
   const [tilt, setTilt] = useState(50)
   const [focus, setFocus] = useState(50)
+  const [effectMode, setEffectMode] = useState('none')
+  const [strobeVal, setStrobeVal] = useState(0)
+  const [effectSlot, setEffectSlot] = useState(1)
+  const [effectSlotValue, setEffectSlotValue] = useState(50)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState(null)
   const [pickerColor, setPickerColor] = useState({ r: 255, g: 255, b: 255 })
@@ -237,6 +241,15 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
       onCueStored?.()
       setCueNum('')
     }
+  }
+
+  async function handleEffectApply(mode, strobe, slot, slotVal) {
+    await applyToFixtures(() => api.effect(
+      mode,
+      mode === 'strobe' ? strobe : null,
+      mode === 'slot' ? slot : null,
+      mode === 'slot' ? slotVal : null,
+    ))
   }
 
   async function handleClearAll() {
@@ -358,6 +371,89 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
           onChange={onColorChange}
           onQChange={(v) => { setQValue(v); applyToFixtures(() => api.setQ(v)) }}
         />
+      </div>
+
+      {/* 이펙트 */}
+      <div style={{ paddingTop: 4 }}>
+        <div style={{ fontSize: 'var(--font-sm)', fontWeight: 700, color: '#7a7f9a', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+          이펙트
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {[
+            { key: 'none', label: '없음' },
+            { key: 'strobe', label: '스트로브' },
+            { key: 'slot', label: 'Effect Slot' },
+          ].map(opt => (
+            <button
+              key={opt.key}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 8,
+                border: `1px solid ${effectMode === opt.key ? '#f0a500' : '#2e334d'}`,
+                background: effectMode === opt.key ? '#2a2000' : '#22263a',
+                color: effectMode === opt.key ? '#f0a500' : '#7a7f9a',
+                fontSize: 'var(--font-sm)',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                setEffectMode(opt.key)
+                handleEffectApply(opt.key, strobeVal, effectSlot, effectSlotValue)
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {effectMode === 'strobe' && (
+          <div style={s.row}>
+            <span style={{ ...s.label, minWidth: 48 }}>속도</span>
+            <div style={s.sliderWrap}>
+              <input
+                type="range" min={0} max={100} value={strobeVal} style={s.slider}
+                onChange={e => setStrobeVal(Number(e.target.value))}
+                onMouseUp={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
+                onTouchEnd={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
+              />
+              <input
+                type="number" min={0} max={100} value={strobeVal} style={s.sliderVal}
+                onChange={e => setStrobeVal(Math.min(100, Math.max(0, Number(e.target.value))))}
+                onBlur={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
+                onKeyDown={e => e.key === 'Enter' && handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
+              />
+            </div>
+          </div>
+        )}
+        {effectMode === 'slot' && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ ...s.label, minWidth: 'unset' }}>Slot</span>
+              <input
+                type="number" min={1} max={99} value={effectSlot}
+                style={{ ...s.sliderVal, width: 60 }}
+                onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectSlot(Math.min(99, Math.max(1, n))) }}
+                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ ...s.label, minWidth: 'unset' }}>세기</span>
+              <input
+                type="number" min={0} max={100} value={effectSlotValue}
+                style={{ ...s.sliderVal, width: 60 }}
+                onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectSlotValue(Math.min(100, Math.max(0, n))) }}
+                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+              />
+            </div>
+            <button
+              style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid #f0a500', background: '#2a2000', color: '#f0a500', fontSize: 'var(--font-sm)', fontWeight: 700, cursor: 'pointer' }}
+              onClick={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+            >
+              적용
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 큐 저장 */}

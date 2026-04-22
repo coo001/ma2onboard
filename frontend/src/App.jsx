@@ -3,6 +3,11 @@ import ConnectBar from './components/ConnectBar'
 import AIChat from './components/AIChat'
 import QuickPanel from './components/QuickPanel'
 import CuePanel from './components/CuePanel'
+import Step1Fixtures from './components/Step1Fixtures'
+import Step2IntensityColor from './components/Step2IntensityColor'
+import Step3Position from './components/Step3Position'
+import Step3Effect from './components/Step3Effect'
+import Step4StoreCue from './components/Step4StoreCue'
 import { api } from './api'
 
 const AUTO = { host: '127.0.0.1', port: 30000, user: 'administrator', password: 'admin' }
@@ -33,7 +38,17 @@ export default function App() {
 
   const [selectedFixtures, setSelectedFixtures] = useState([])
   const [cueRefreshKey, setCueRefreshKey] = useState(0)
+  const [wizardMode, setWizardMode] = useState(false)
+  const [wizardStep, setWizardStep] = useState(1)
+  const [wizardData, setWizardData] = useState({})
   const wsRef = useRef(null)
+
+  function wizardAdvance(partial) {
+    setWizardData(prev => ({ ...prev, ...partial }))
+    setWizardStep(s => s + 1)
+  }
+  function wizardBack() { setWizardStep(s => Math.max(1, s - 1)) }
+  function wizardReset() { setWizardStep(1); setWizardData({}); setWizardMode(false) }
 
   useEffect(() => {
     async function autoConnect() {
@@ -122,9 +137,32 @@ export default function App() {
           <div style={s.overlay}>
             <div style={s.overlayCard}>{overlayContent}</div>
           </div>
+        ) : wizardMode ? (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ padding: '8px 16px', background: '#1a1d27', borderBottom: '1px solid #2e334d', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: '#7a7f9a' }}>마법사 모드</span>
+              <button className="btn btn-secondary" style={{ fontSize: 12, padding: '3px 10px' }} onClick={wizardReset}>
+                빠른 조작으로 돌아가기
+              </button>
+            </div>
+            {wizardStep === 1 && <Step1Fixtures onNext={wizardAdvance} />}
+            {wizardStep === 2 && <Step2IntensityColor data={wizardData} onNext={wizardAdvance} onBack={wizardBack} />}
+            {wizardStep === 3 && <Step3Position data={wizardData} onNext={wizardAdvance} onBack={wizardBack} />}
+            {wizardStep === 4 && <Step3Effect data={wizardData} onNext={wizardAdvance} onBack={wizardBack} />}
+            {wizardStep === 5 && <Step4StoreCue data={wizardData} onBack={wizardBack} onReset={wizardReset} />}
+          </div>
         ) : (
           <>
-            <QuickPanel fixtures={selectedFixtures} onFixturesChange={setSelectedFixtures} onCueStored={() => setCueRefreshKey(k => k + 1)} />
+            <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0 }}>
+              <QuickPanel fixtures={selectedFixtures} onFixturesChange={setSelectedFixtures} onCueStored={() => setCueRefreshKey(k => k + 1)} />
+              <button
+                className="btn btn-secondary"
+                style={{ position: 'absolute', top: 8, right: 8, fontSize: 11, padding: '3px 10px', opacity: 0.7 }}
+                onClick={() => { setWizardMode(true); setWizardStep(1); setWizardData({}) }}
+              >
+                마법사 모드
+              </button>
+            </div>
             <CuePanel refreshKey={cueRefreshKey} />
             <AIChat connected={connected} />
           </>

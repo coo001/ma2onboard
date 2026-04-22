@@ -32,6 +32,11 @@ try:
         cmd_color_preset,
         cmd_color_rgb,
         cmd_delete_cue,
+        cmd_effect_high,
+        cmd_effect_low,
+        cmd_effect_off,
+        cmd_effect_rate,
+        cmd_effect_slot,
         cmd_focus,
         cmd_goto_cue,
         cmd_intensity,
@@ -40,6 +45,7 @@ try:
         cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
+        cmd_strobe,
         cmd_tilt,
     )
     from .telnet_client import MA2_DEFAULT_PORT, ma2_client
@@ -51,6 +57,11 @@ except ImportError:
         cmd_color_preset,
         cmd_color_rgb,
         cmd_delete_cue,
+        cmd_effect_high,
+        cmd_effect_low,
+        cmd_effect_off,
+        cmd_effect_rate,
+        cmd_effect_slot,
         cmd_focus,
         cmd_goto_cue,
         cmd_intensity,
@@ -59,6 +70,7 @@ except ImportError:
         cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
+        cmd_strobe,
         cmd_tilt,
     )
     from telnet_client import MA2_DEFAULT_PORT, ma2_client
@@ -244,6 +256,16 @@ class PositionRequest(BaseModel):
     pan: int
     tilt: int
     focus: Optional[int] = None
+
+
+class EffectRequest(BaseModel):
+    mode: str  # "none" | "strobe" | "slot"
+    strobe: Optional[int] = None
+    slot: Optional[int] = None
+    tempo: Optional[int] = None
+    high: Optional[int] = None
+    low: Optional[int] = None
+    value: Optional[int] = None
 
 
 class StoreCueRequest(BaseModel):
@@ -476,6 +498,42 @@ async def wizard_position(req: PositionRequest):
         state_update: dict = {"pan": req.pan, "tilt": req.tilt}
         if req.focus is not None:
             state_update["focus"] = req.focus
+        ai_update(_selected_fixtures, state_update)
+    return summarize_results(results)
+
+
+@app.post("/api/wizard/effect")
+async def wizard_effect(req: EffectRequest):
+    mode = (req.mode or "none").lower()
+    if mode == "none":
+        commands = [cmd_effect_off()]
+        state_update: dict = {"effect": {"mode": "none"}}
+    elif mode == "strobe":
+        strobe_val = 0 if req.strobe is None else int(req.strobe)
+        commands = [cmd_strobe(strobe_val)]
+        state_update = {"effect": {"mode": "strobe", "strobe": strobe_val}}
+    elif mode == "slot":
+        if req.slot is None or req.value is None:
+            raise HTTPException(status_code=400, detail="slot 모드는 slot과 value가 필요합니다.")
+        slot = int(req.slot)
+        val = int(req.value)
+        if not (1 <= slot <= 99):
+            raise HTTPException(status_code=400, detail="slot은 1..99 범위여야 합니다.")
+        if not (0 <= val <= 100):
+            raise HTTPException(status_code=400, detail="value는 0..100 범위여야 합니다.")
+        commands = [cmd_effect_slot(slot, val)]
+        if req.tempo is not None:
+            commands.append(cmd_effect_rate(max(0, min(100, int(req.tempo)))))
+        if req.high is not None:
+            commands.append(cmd_effect_high(max(0, min(100, int(req.high)))))
+        if req.low is not None:
+            commands.append(cmd_effect_low(max(0, min(100, int(req.low)))))
+        state_update = {"effect": {"mode": "slot", "slot": slot, "value": val,
+                                   "tempo": req.tempo, "high": req.high, "low": req.low}}
+    else:
+        raise HTTPException(status_code=400, detail=f"알 수 없는 mode: {req.mode}")
+    results = await send_commands(commands)
+    if _selected_fixtures:
         ai_update(_selected_fixtures, state_update)
     return summarize_results(results)
 

@@ -155,7 +155,7 @@ export default function Step3Position({ data, onNext, onBack }) {
 
   return (
     <div style={styles.wrap}>
-      <div style={styles.stepBadge}>3 / 4 단계</div>
+      <div style={styles.stepBadge}>3 / 5 단계</div>
       <div style={styles.title}>방향과 초점을 조정하세요</div>
       <div style={styles.subtitle}>
         움직이는 조명이라면 여기서 방향을 맞춥니다. 고정 조명만 사용하는 경우에는 기본값 그대로 두고 넘어가도 됩니다.

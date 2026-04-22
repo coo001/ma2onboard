@@ -176,7 +176,7 @@ export default function Step4StoreCue({ data, onBack, onReset }) {
 
   return (
     <div style={styles.wrap}>
-      <div style={styles.stepBadge}>4 / 4 단계</div>
+      <div style={styles.stepBadge}>5 / 5 단계</div>
       <div style={styles.title}>지금 상태를 저장하고 정리하세요</div>
       <div style={styles.subtitle}>
         grandMA2 쪽 programmer도 함께 정리되도록 전체 초기화와 선택 초기화 동작을 분리했습니다.
@@ -249,6 +249,14 @@ export default function Step4StoreCue({ data, onBack, onReset }) {
           <div style={styles.summaryRow}>
             <span style={styles.summaryKey}>Focus</span>
             <span style={styles.summaryValue}>{data.focus}</span>
+          </div>
+          <div style={styles.summaryRow}>
+            <span style={styles.summaryKey}>이펙트</span>
+            <span style={styles.summaryValue}>
+              {data.effect?.mode === 'strobe' && `Strobe ${data.effect.strobe}`}
+              {data.effect?.mode === 'slot' && `Effect ${data.effect.slot} @ ${data.effect.value}`}
+              {(!data.effect || data.effect.mode === 'none') && '없음'}
+            </span>
           </div>
         </div>
       </div>
