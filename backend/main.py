@@ -18,7 +18,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+import tempfile
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -48,8 +50,10 @@ try:
         cmd_strobe,
         cmd_tilt,
     )
+    from .excel_importer import parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError
     from .telnet_client import MA2_DEFAULT_PORT, ma2_client
 except ImportError:
+    from excel_importer import parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError
     from ma2_commands import (
         COLOR_PRESETS,
         cmd_clear_all,
@@ -139,7 +143,7 @@ class BridgeSession:
         self._pending: dict[str, asyncio.Future] = {}
 
     async def request(self, msg: dict, timeout: float = 8.0) -> dict:
-        msg_id = str(_uuid.uuid4())[:8]
+        msg_id = str(_uuid.uuid4())
         msg["id"] = msg_id
         loop = asyncio.get_event_loop()
         fut: asyncio.Future = loop.create_future()
@@ -172,7 +176,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="grandMA2 Onboarding API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -377,6 +386,103 @@ async def add_cue(req: CueRequest):
         cues.append({"number": num, "label": req.label or "", "source": "web"})
         _write_cues(cues)
     return {"ok": True, "cues": cues}
+
+def _row_stub(r: dict) -> dict:
+    return {"row_index": r["row_index"], "cue": r["cue"], "label": r.get("label", "")}
+
+
+@app.post("/api/cues/import-excel")
+async def import_cues_excel(
+    file: UploadFile = File(...),
+    dry_run: bool = Form(True),
+    on_error: str = Form("skip"),
+):
+    if on_error not in ("skip", "abort"):
+        raise HTTPException(status_code=400, detail="on_error는 skip|abort 중 하나여야 합니다.")
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail=".xlsx 파일만 지원합니다.")
+
+    content = await file.read()
+    try:
+        rows, errors = parse_workbook(content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    for r in rows:
+        r["commands"] = excel_build_commands(r)
+
+    total_rows = len(rows) + len(errors)
+    valid_rows = len(rows)
+    results = []
+
+    if dry_run:
+        for r in rows:
+            results.append({
+                **_row_stub(r),
+                "ok": True,
+                "error": "",
+                "commands": r["commands"],
+            })
+        return {
+            "ok": len(errors) == 0,
+            "dry_run": True,
+            "total_rows": total_rows,
+            "valid_rows": valid_rows,
+            "errors": errors,
+            "results": results,
+        }
+
+    async with _cues_lock:
+        cues_list, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues_list)
+        existing_numbers = {c["number"] for c in cues_list}
+
+    aborted = False
+    for r in rows:
+        if aborted:
+            results.append({**_row_stub(r), "ok": False, "error": "이전 오류로 중단됨", "commands": r["commands"]})
+            continue
+        if r["cue"] in existing_numbers:
+            results.append({**_row_stub(r), "ok": False, "error": "중복 큐 번호(skip)", "commands": r["commands"]})
+            continue
+        try:
+            for cmd in r["commands"]:
+                res = await send_and_log(cmd)
+                if not res.get("ok"):
+                    raise RuntimeError(res.get("error") or res.get("response") or "명령 실패")
+            async with _cues_lock:
+                cues_list, _ = _read_cues()
+                cues_list.append({"number": r["cue"], "label": r.get("label", ""), "source": "excel"})
+                _write_cues(cues_list)
+            existing_numbers.add(r["cue"])
+            results.append({**_row_stub(r), "ok": True, "error": "", "commands": r["commands"]})
+        except Exception as exc:
+            results.append({**_row_stub(r), "ok": False, "error": str(exc), "commands": r["commands"]})
+            if on_error == "abort":
+                aborted = True
+
+    succeeded = [x for x in results if x["ok"]]
+    return {
+        "ok": len(succeeded) > 0 and not errors,
+        "dry_run": False,
+        "total_rows": total_rows,
+        "valid_rows": valid_rows,
+        "errors": errors,
+        "results": results,
+    }
+
+
+@app.get("/api/cues/import-template")
+async def import_cues_template():
+    tmp_path = Path(tempfile.gettempdir()) / "cues_template.xlsx"
+    generate_template_xlsx(tmp_path)
+    return FileResponse(
+        tmp_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="cues_template.xlsx",
+    )
+
 
 @app.delete("/api/cues/{cue_number}")
 async def delete_cue(cue_number: str):
@@ -600,6 +706,18 @@ async def _apply_fixture_group(group: dict, actions: list[str]) -> None:
         await send_and_log(cmd_tilt(int(group["tilt"])))
         actions.append(f"Tilt {group['tilt']}")
 
+    if group.get("effect"):
+        eff = group["effect"]
+        eff_mode = (eff.get("mode") or "none").lower()
+        if eff_mode == "strobe":
+            await send_and_log(cmd_strobe(int(eff.get("strobe", 0))))
+            actions.append(f"스트로브 {eff.get('strobe', 0)}")
+        elif eff_mode == "slot":
+            await send_and_log(cmd_effect_slot(int(eff["slot"]), int(eff["value"])))
+            actions.append(f"Effect Slot {eff['slot']} @ {eff['value']}")
+        elif eff_mode == "none":
+            await send_and_log(cmd_effect_off())
+
     if group.get("store_cue"):
         await send_and_log(cmd_store_cue(str(group["store_cue"])))
         actions.append(f"큐 {group['store_cue']}번 저장")
@@ -660,6 +778,18 @@ async def ai_command_endpoint(req: AICommandRequest):
         await send_and_log(cmd_focus(int(parsed["focus"])))
         actions.append(f"Focus {parsed['focus']}")
 
+    if parsed.get("effect"):
+        eff = parsed["effect"]
+        eff_mode = (eff.get("mode") or "none").lower()
+        if eff_mode == "strobe":
+            await send_and_log(cmd_strobe(int(eff.get("strobe", 0))))
+            actions.append(f"스트로브 {eff.get('strobe', 0)}")
+        elif eff_mode == "slot":
+            await send_and_log(cmd_effect_slot(int(eff["slot"]), int(eff["value"])))
+            actions.append(f"Effect Slot {eff['slot']} @ {eff['value']}")
+        elif eff_mode == "none":
+            await send_and_log(cmd_effect_off())
+
     if parsed.get("store_cue"):
         await send_and_log(cmd_store_cue(str(parsed["store_cue"])))
         actions.append(f"큐 {parsed['store_cue']}번 저장")
@@ -674,8 +804,13 @@ async def ai_command_endpoint(req: AICommandRequest):
     }
 
 
+_DANGEROUS_PATTERNS = ["delete", "clearall", "clear all", "remove", "login", "logout", "off all"]
+
 @app.post("/api/command")
 async def raw_command(req: RawCommandRequest):
+    cmd_lower = req.command.strip().lower()
+    if any(cmd_lower.startswith(p) for p in _DANGEROUS_PATTERNS):
+        raise HTTPException(status_code=400, detail=f"위험 명령은 직접 전송할 수 없습니다: {req.command[:50]}")
     return await send_and_log(req.command)
 
 
@@ -691,6 +826,8 @@ async def color_presets():
 
 @app.get("/api/debug-telnet")
 async def debug_telnet():
+    if not os.getenv("APP_DEBUG"):
+        raise HTTPException(status_code=404, detail="Not found")
     import asyncio as _asyncio
 
     result = {}

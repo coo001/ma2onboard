@@ -56,6 +56,7 @@ _SYSTEM = """\
   "tilt": 65,
   "focus": 0,
   "store_cue": null,
+  "effect": null,
   "explanation": "한국어로 실행 내용 설명"
 }
 
@@ -70,6 +71,11 @@ _SYSTEM = """\
 }
 - scene_fixtures는 빈 배열이어선 안 됩니다. 분위기에 맞게 fixture 1~10 중에서 그룹을 나눠 설정하세요.
 - 각 그룹의 pan/tilt는 생략 가능합니다 (생략 시 null).
+
+## effect 필드 (없으면 null)
+{"mode": "none"} | {"mode": "strobe", "strobe": 0-100} | {"mode": "slot", "slot": 1-99, "value": 0-100}
+- "스트로브 켜", "번쩍번쩍" → mode=strobe
+- "이펙트 끄기" → mode=none
 
 ## 색상 매핑 (RGB 0-100 기준)
 - 빨간색/적색/찐한빨간색/진한빨간색: r=100 g=0 b=0

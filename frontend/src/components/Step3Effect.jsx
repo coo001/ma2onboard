@@ -113,7 +113,7 @@ export default function Step3Effect({ data, onNext, onBack }) {
 
   function changeMode(next) {
     setMode(next)
-    sendEffect(next, strobe, slot, slotValue, tempo, high, low)
+    sendEffect(next, strobe, slot, slotValue, null, null, null)
   }
 
   function changeStrobe(v) {

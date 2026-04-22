@@ -8,6 +8,7 @@ import Step2IntensityColor from './components/Step2IntensityColor'
 import Step3Position from './components/Step3Position'
 import Step3Effect from './components/Step3Effect'
 import Step4StoreCue from './components/Step4StoreCue'
+import ImportCuePanel from './components/ImportCuePanel'
 import { api } from './api'
 
 const AUTO = { host: '127.0.0.1', port: 30000, user: 'administrator', password: 'admin' }
@@ -39,6 +40,7 @@ export default function App() {
   const [selectedFixtures, setSelectedFixtures] = useState([])
   const [cueRefreshKey, setCueRefreshKey] = useState(0)
   const [wizardMode, setWizardMode] = useState(false)
+  const [importMode, setImportMode] = useState(false)
   const [wizardStep, setWizardStep] = useState(1)
   const [wizardData, setWizardData] = useState({})
   const wsRef = useRef(null)
@@ -62,6 +64,7 @@ export default function App() {
 
   useEffect(() => {
     function connectWS() {
+      let cancelled = false
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
       const ws = new WebSocket(`${protocol}//${location.host}/ws/log`)
       wsRef.current = ws
@@ -78,10 +81,11 @@ export default function App() {
           }
         }
       }
-      ws.onclose = () => setTimeout(connectWS, 2000)
+      ws.onclose = () => { if (!cancelled) setTimeout(connectWS, 2000) }
+      return () => { cancelled = true; ws.close() }
     }
-    connectWS()
-    return () => wsRef.current?.close()
+    const cleanup = connectWS()
+    return cleanup
   }, [])
 
   async function handleRetry() {
@@ -137,6 +141,19 @@ export default function App() {
           <div style={s.overlay}>
             <div style={s.overlayCard}>{overlayContent}</div>
           </div>
+        ) : importMode ? (
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ padding: '8px 16px', background: '#1a1d27', borderBottom: '1px solid #2e334d', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: '#7a7f9a' }}>엑셀 가져오기</span>
+              <button className="btn btn-secondary" style={{ fontSize: 12, padding: '3px 10px' }} onClick={() => setImportMode(false)}>
+                빠른 조작으로 돌아가기
+              </button>
+            </div>
+            <ImportCuePanel
+              onClose={() => setImportMode(false)}
+              onImported={() => { setCueRefreshKey(k => k + 1); setImportMode(false) }}
+            />
+          </div>
         ) : wizardMode ? (
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <div style={{ padding: '8px 16px', background: '#1a1d27', borderBottom: '1px solid #2e334d', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -161,6 +178,13 @@ export default function App() {
                 onClick={() => { setWizardMode(true); setWizardStep(1); setWizardData({}) }}
               >
                 마법사 모드
+              </button>
+              <button
+                className="btn btn-secondary"
+                style={{ position: 'absolute', top: 8, right: 96, fontSize: 11, padding: '3px 10px', opacity: 0.7 }}
+                onClick={() => setImportMode(true)}
+              >
+                엑셀 가져오기
               </button>
             </div>
             <CuePanel refreshKey={cueRefreshKey} />

@@ -153,6 +153,9 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
   const [strobeVal, setStrobeVal] = useState(0)
   const [effectSlot, setEffectSlot] = useState(1)
   const [effectSlotValue, setEffectSlotValue] = useState(50)
+  const [effectTempo, setEffectTempo] = useState(50)
+  const [effectHigh, setEffectHigh] = useState(100)
+  const [effectLow, setEffectLow] = useState(0)
   const [sending, setSending] = useState(false)
   const [feedback, setFeedback] = useState(null)
   const [pickerColor, setPickerColor] = useState({ r: 255, g: 255, b: 255 })
@@ -243,12 +246,15 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
     }
   }
 
-  async function handleEffectApply(mode, strobe, slot, slotVal) {
+  async function handleEffectApply(mode, strobe, slot, slotVal, tempo, high, low) {
     await applyToFixtures(() => api.effect(
       mode,
       mode === 'strobe' ? strobe : null,
       mode === 'slot' ? slot : null,
       mode === 'slot' ? slotVal : null,
+      mode === 'slot' ? tempo : null,
+      mode === 'slot' ? high : null,
+      mode === 'slot' ? low : null,
     ))
   }
 
@@ -398,7 +404,7 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
               }}
               onClick={() => {
                 setEffectMode(opt.key)
-                handleEffectApply(opt.key, strobeVal, effectSlot, effectSlotValue)
+                handleEffectApply(opt.key, strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)
               }}
             >
               {opt.label}
@@ -412,14 +418,14 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
               <input
                 type="range" min={0} max={100} value={strobeVal} style={s.slider}
                 onChange={e => setStrobeVal(Number(e.target.value))}
-                onMouseUp={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
-                onTouchEnd={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
+                onMouseUp={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                onTouchEnd={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
               />
               <input
                 type="number" min={0} max={100} value={strobeVal} style={s.sliderVal}
                 onChange={e => setStrobeVal(Math.min(100, Math.max(0, Number(e.target.value))))}
-                onBlur={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
-                onKeyDown={e => e.key === 'Enter' && handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue)}
+                onBlur={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                onKeyDown={e => e.key === 'Enter' && handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
               />
             </div>
           </div>
@@ -432,8 +438,8 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
                 type="number" min={1} max={99} value={effectSlot}
                 style={{ ...s.sliderVal, width: 60 }}
                 onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectSlot(Math.min(99, Math.max(1, n))) }}
-                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
-                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
               />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -442,13 +448,46 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
                 type="number" min={0} max={100} value={effectSlotValue}
                 style={{ ...s.sliderVal, width: 60 }}
                 onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectSlotValue(Math.min(100, Math.max(0, n))) }}
-                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
-                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
               />
+            </div>
+            {/* Tempo/High/Low */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ ...s.label, minWidth: 'unset', color: '#c4a0ff' }}>Tempo</span>
+                    <input
+                        type="number" min={0} max={100} value={effectTempo}
+                        style={{ ...s.sliderVal, width: 60 }}
+                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectTempo(Math.min(100, Math.max(0, n))) }}
+                        onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                        onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                    />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ ...s.label, minWidth: 'unset', color: '#3ddc84' }}>High</span>
+                    <input
+                        type="number" min={0} max={100} value={effectHigh}
+                        style={{ ...s.sliderVal, width: 60 }}
+                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectHigh(Math.min(100, Math.max(0, n))) }}
+                        onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                        onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                    />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ ...s.label, minWidth: 'unset', color: '#6ab0f5' }}>Low</span>
+                    <input
+                        type="number" min={0} max={100} value={effectLow}
+                        style={{ ...s.sliderVal, width: 60 }}
+                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectLow(Math.min(100, Math.max(0, n))) }}
+                        onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                        onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
+                    />
+                </div>
             </div>
             <button
               style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid #f0a500', background: '#2a2000', color: '#f0a500', fontSize: 'var(--font-sm)', fontWeight: 700, cursor: 'pointer' }}
-              onClick={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue)}
+              onClick={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
             >
               적용
             </button>

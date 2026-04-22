@@ -254,7 +254,12 @@ export default function Step4StoreCue({ data, onBack, onReset }) {
             <span style={styles.summaryKey}>이펙트</span>
             <span style={styles.summaryValue}>
               {data.effect?.mode === 'strobe' && `Strobe ${data.effect.strobe}`}
-              {data.effect?.mode === 'slot' && `Effect ${data.effect.slot} @ ${data.effect.value}`}
+              {data.effect?.mode === 'slot' && (
+                  `Effect ${data.effect.slot} @ ${data.effect.value}` +
+                  (data.effect.tempo != null ? ` · Tempo ${data.effect.tempo}` : '') +
+                  (data.effect.high  != null ? ` · High ${data.effect.high}`  : '') +
+                  (data.effect.low   != null ? ` · Low ${data.effect.low}`    : '')
+              )}
               {(!data.effect || data.effect.mode === 'none') && '없음'}
             </span>
           </div>

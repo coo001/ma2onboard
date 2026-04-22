@@ -61,4 +61,19 @@ export const api = {
   executeCue: (cue_number, fade = 0) => post(`/cues/${encodeURIComponent(cue_number)}/execute`, { fade }),
   syncCues: () => post('/cues/sync', {}),
   setQ: (q) => post('/wizard/q', { q }),
+  importCuesExcel: async (file, dry_run = true, on_error = 'skip') => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('dry_run', String(dry_run))
+    fd.append('on_error', on_error)
+    try {
+      const res = await fetch(BASE + '/cues/import-excel', { method: 'POST', body: fd })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: data.detail || data.error || `요청 실패 (${res.status})`, ...data }
+      return data
+    } catch (e) {
+      return { ok: false, error: '업로드 실패', detail: String(e) }
+    }
+  },
+  importTemplateUrl: () => BASE + '/cues/import-template',
 }

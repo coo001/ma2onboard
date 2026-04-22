@@ -46,17 +46,17 @@ def cmd_color_preset(name: str) -> List[str]:
 
 def cmd_pan(value: int) -> str:
     value = max(0, min(100, value))
-    return 'Attribute "Pan" At {value}'.format(value=value)
+    return f'Attribute "Pan" At {value}'
 
 
 def cmd_tilt(value: int) -> str:
     value = max(0, min(100, value))
-    return 'Attribute "Tilt" At {value}'.format(value=value)
+    return f'Attribute "Tilt" At {value}'
 
 
 def cmd_focus(value: int) -> str:
     value = max(0, min(100, value))
-    return 'Attribute "Zoom" At {value}'.format(value=value)
+    return f'Attribute "Zoom" At {value}'
 
 
 def cmd_store_cue(cue_number: str) -> str:
@@ -74,7 +74,7 @@ def cmd_goto_cue(cue_number: str, fade: float = 0.0) -> str:
 
 
 def cmd_clear_all() -> str:
-    return "Clear"
+    return "ClearAll"
 
 
 def cmd_clear_selection() -> str:
