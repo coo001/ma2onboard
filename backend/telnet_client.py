@@ -68,6 +68,8 @@ class MA2TelnetClient:
         login_cmd = f"Login {user}"
         if password:
             login_cmd += f" {password}"
+        log_cmd = f"Login {user} ***" if password else f"Login {user}"
+        logger.info(f"[MA2 connect] sending: {log_cmd}")
         self._writer.write(login_cmd.encode() + b"\r\n")
         await self._writer.drain()
 

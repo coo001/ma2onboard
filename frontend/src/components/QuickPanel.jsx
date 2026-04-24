@@ -213,16 +213,16 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
     if (colorDebounceRef.current) clearTimeout(colorDebounceRef.current)
     colorDebounceRef.current = setTimeout(async () => {
       const rgb100 = rgb255To100(r, g, b)
-      await applyToFixtures(() => api.intensityColor(brightness, null, rgb100))
+      await applyToFixtures(() => api.intensityColor(brightness, null, rgb100, fixtures))
     }, 80)
   }
 
   async function handleBrightnessCommit() {
-    await applyToFixtures(() => api.intensityColor(brightness, null, null))
+    await applyToFixtures(() => api.intensityColor(brightness, null, null, fixtures))
   }
 
   async function handlePositionCommit() {
-    await applyToFixtures(() => api.position(pan, tilt, focus))
+    await applyToFixtures(() => api.position(pan, tilt, focus, fixtures))
   }
 
   async function handleStoreCue() {
@@ -234,7 +234,12 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
     for (const n of nums) {
       const result = await api.storeCue(n)
       if (!result || result.ok === false) failed.push(n)
-      else api.addCue(n)
+      else {
+        const addResult = await api.addCue(n)
+        if (addResult && addResult.ok === false && addResult.status !== 409) {
+          failed.push(n)
+        }
+      }
     }
     setSending(false)
     if (failed.length > 0) {
@@ -255,6 +260,7 @@ export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) 
       mode === 'slot' ? tempo : null,
       mode === 'slot' ? high : null,
       mode === 'slot' ? low : null,
+      fixtures,
     ))
   }
 

@@ -7,7 +7,16 @@ Notes:
 - Value range is currently treated as percent-based 0..100.
 """
 
+import re
 from typing import List
+
+_CUE_NUMBER_RE = re.compile(r'^\d+(\.\d+)?$')
+
+
+def _validate_cue_number(value: str) -> str:
+    if not _CUE_NUMBER_RE.match(value.strip()):
+        raise ValueError(f"유효하지 않은 큐 번호: {value!r}")
+    return value.strip()
 
 
 def cmd_select_fixtures(fixture_numbers: List[int]) -> str:
@@ -60,17 +69,18 @@ def cmd_focus(value: int) -> str:
 
 
 def cmd_store_cue(cue_number: str) -> str:
-    return f"Store Cue {cue_number}"
+    return f"Store Cue {_validate_cue_number(cue_number)}"
 
 
 def cmd_delete_cue(cue_number: str) -> str:
-    return f"Delete Cue {cue_number}"
+    return f"Delete Cue {_validate_cue_number(cue_number)}"
 
 
 def cmd_goto_cue(cue_number: str, fade: float = 0.0) -> str:
+    num = _validate_cue_number(cue_number)
     if fade > 0:
-        return f"Goto Cue {cue_number} Fade {fade}"
-    return f"Goto Cue {cue_number}"
+        return f"Goto Cue {num} Fade {fade}"
+    return f"Goto Cue {num}"
 
 
 def cmd_clear_all() -> str:

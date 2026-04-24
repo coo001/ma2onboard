@@ -150,9 +150,10 @@ class BridgeSession:
         self._pending[msg_id] = fut
         await self.ws.send_text(json.dumps(msg, ensure_ascii=False))
         try:
-            return await asyncio.wait_for(asyncio.shield(fut), timeout=timeout)
+            return await asyncio.wait_for(fut, timeout=timeout)
         except asyncio.TimeoutError:
             self._pending.pop(msg_id, None)
+            logger.warning(f"[Bridge] 응답 타임아웃 (id={msg_id})")
             return {"ok": False, "error": "브릿지 응답 타임아웃"}
 
     def resolve(self, msg: dict):
@@ -161,10 +162,11 @@ class BridgeSession:
             fut = self._pending.pop(msg_id)
             if not fut.done():
                 fut.set_result(msg)
+        elif msg_id:
+            logger.warning(f"[Bridge] 타임아웃 후 늦은 응답 수신 (id={msg_id})")
 
 
 _bridge: BridgeSession | None = None
-_selected_fixtures: List[int] = []
 
 
 @asynccontextmanager
@@ -182,8 +184,8 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Content-Type"],
 )
 
 if FRONTEND_DIST.exists():
@@ -259,12 +261,14 @@ class IntensityColorRequest(BaseModel):
     intensity: int
     color_preset: Optional[str] = None
     color_rgb: Optional[dict] = None
+    fixture_numbers: Optional[List[int]] = None
 
 
 class PositionRequest(BaseModel):
     pan: int
     tilt: int
     focus: Optional[int] = None
+    fixture_numbers: Optional[List[int]] = None
 
 
 class EffectRequest(BaseModel):
@@ -275,6 +279,7 @@ class EffectRequest(BaseModel):
     high: Optional[int] = None
     low: Optional[int] = None
     value: Optional[int] = None
+    fixture_numbers: Optional[List[int]] = None
 
 
 class StoreCueRequest(BaseModel):
@@ -382,7 +387,7 @@ async def add_cue(req: CueRequest):
         if migrated:
             _write_cues(cues)
         if any(c["number"] == num for c in cues):
-            return JSONResponse(status_code=400, content={"ok": False, "detail": "이미 존재하는 큐 번호입니다"})
+            return JSONResponse(status_code=409, content={"ok": False, "detail": "이미 존재하는 큐 번호입니다"})
         cues.append({"number": num, "label": req.label or "", "source": "web"})
         _write_cues(cues)
     return {"ok": True, "cues": cues}
@@ -432,35 +437,48 @@ async def import_cues_excel(
             "results": results,
         }
 
+    # 1단계: lock 안에서 기존 번호 확인 및 처리 대상 예약
+    to_process = []
     async with _cues_lock:
         cues_list, migrated = _read_cues()
         if migrated:
             _write_cues(cues_list)
         existing_numbers = {c["number"] for c in cues_list}
+        for r in rows:
+            if r["cue"] in existing_numbers:
+                results.append({**_row_stub(r), "ok": False, "error": "중복 큐 번호(skip)", "commands": r["commands"]})
+            else:
+                to_process.append(r)
+                existing_numbers.add(r["cue"])  # 예약
 
+    # 2단계: lock 밖에서 Telnet 명령 전송
+    succeeded_cues = []
     aborted = False
-    for r in rows:
+    for r in to_process:
         if aborted:
             results.append({**_row_stub(r), "ok": False, "error": "이전 오류로 중단됨", "commands": r["commands"]})
-            continue
-        if r["cue"] in existing_numbers:
-            results.append({**_row_stub(r), "ok": False, "error": "중복 큐 번호(skip)", "commands": r["commands"]})
             continue
         try:
             for cmd in r["commands"]:
                 res = await send_and_log(cmd)
                 if not res.get("ok"):
-                    raise RuntimeError(res.get("error") or res.get("response") or "명령 실패")
-            async with _cues_lock:
-                cues_list, _ = _read_cues()
-                cues_list.append({"number": r["cue"], "label": r.get("label", ""), "source": "excel"})
-                _write_cues(cues_list)
-            existing_numbers.add(r["cue"])
+                    raise RuntimeError(res.get("error") or "명령 실패")
+            succeeded_cues.append({"number": r["cue"], "label": r.get("label", ""), "source": "excel"})
             results.append({**_row_stub(r), "ok": True, "error": "", "commands": r["commands"]})
         except Exception as exc:
             results.append({**_row_stub(r), "ok": False, "error": str(exc), "commands": r["commands"]})
             if on_error == "abort":
                 aborted = True
+
+    # 3단계: lock 안에서 성공한 항목만 한 번에 저장
+    if succeeded_cues:
+        async with _cues_lock:
+            cues_list, _ = _read_cues()
+            existing = {c["number"] for c in cues_list}
+            for c in succeeded_cues:
+                if c["number"] not in existing:
+                    cues_list.append(c)
+            _write_cues(cues_list)
 
     succeeded = [x for x in results if x["ok"]]
     return {
@@ -560,8 +578,6 @@ async def status():
 
 @app.post("/api/wizard/select-fixtures")
 async def wizard_select_fixtures(req: FixtureSelectRequest):
-    global _selected_fixtures
-    _selected_fixtures = req.fixture_numbers
     return await send_and_log(cmd_select_fixtures(req.fixture_numbers))
 
 
@@ -582,14 +598,14 @@ async def wizard_intensity_color(req: IntensityColorRequest):
 
     results = await send_commands(commands)
 
-    if _selected_fixtures:
+    if req.fixture_numbers:
         state_update: dict = {"intensity": req.intensity}
         if req.color_preset and req.color_preset in COLOR_PRESETS:
             rgb = COLOR_PRESETS[req.color_preset]
             state_update["color"] = {"r": rgb[0], "g": rgb[1], "b": rgb[2]}
         elif req.color_rgb:
             state_update["color"] = req.color_rgb
-        ai_update(_selected_fixtures, state_update)
+        ai_update(req.fixture_numbers, state_update)
 
     return summarize_results(results)
 
@@ -600,11 +616,11 @@ async def wizard_position(req: PositionRequest):
     if req.focus is not None:
         commands.append(cmd_focus(req.focus))
     results = await send_commands(commands)
-    if _selected_fixtures:
+    if req.fixture_numbers:
         state_update: dict = {"pan": req.pan, "tilt": req.tilt}
         if req.focus is not None:
             state_update["focus"] = req.focus
-        ai_update(_selected_fixtures, state_update)
+        ai_update(req.fixture_numbers, state_update)
     return summarize_results(results)
 
 
@@ -639,8 +655,8 @@ async def wizard_effect(req: EffectRequest):
     else:
         raise HTTPException(status_code=400, detail=f"알 수 없는 mode: {req.mode}")
     results = await send_commands(commands)
-    if _selected_fixtures:
-        ai_update(_selected_fixtures, state_update)
+    if req.fixture_numbers:
+        ai_update(req.fixture_numbers, state_update)
     return summarize_results(results)
 
 
@@ -719,8 +735,11 @@ async def _apply_fixture_group(group: dict, actions: list[str]) -> None:
             await send_and_log(cmd_effect_off())
 
     if group.get("store_cue"):
-        await send_and_log(cmd_store_cue(str(group["store_cue"])))
-        actions.append(f"큐 {group['store_cue']}번 저장")
+        try:
+            await send_and_log(cmd_store_cue(str(group["store_cue"])))
+            actions.append(f"큐 {group['store_cue']}번 저장")
+        except ValueError as e:
+            logger.warning(f"[AI] store_cue 건너뜀: {e}")
 
     ai_update(fixtures, group)
 
@@ -791,8 +810,11 @@ async def ai_command_endpoint(req: AICommandRequest):
             await send_and_log(cmd_effect_off())
 
     if parsed.get("store_cue"):
-        await send_and_log(cmd_store_cue(str(parsed["store_cue"])))
-        actions.append(f"큐 {parsed['store_cue']}번 저장")
+        try:
+            await send_and_log(cmd_store_cue(str(parsed["store_cue"])))
+            actions.append(f"큐 {parsed['store_cue']}번 저장")
+        except ValueError as e:
+            logger.warning(f"[AI] store_cue 건너뜀: {e}")
 
     ai_update(fixtures, parsed)
 
@@ -804,13 +826,35 @@ async def ai_command_endpoint(req: AICommandRequest):
     }
 
 
-_DANGEROUS_PATTERNS = ["delete", "clearall", "clear all", "remove", "login", "logout", "off all"]
+_DANGEROUS_FIRST_TOKENS = frozenset([
+    "delete", "clearall", "clear", "remove", "login", "logout",
+])
+
+
+def _validate_raw_command(command: str) -> None:
+    if any(ch in command for ch in ('\r', '\n', ';')):
+        raise HTTPException(
+            status_code=400,
+            detail="명령에 제어 문자(\\r, \\n) 또는 세미콜론을 포함할 수 없습니다."
+        )
+    tokens = command.strip().lower().split()
+    if not tokens:
+        raise HTTPException(status_code=400, detail="빈 명령입니다.")
+    if tokens[0] in _DANGEROUS_FIRST_TOKENS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"위험 명령은 직접 전송할 수 없습니다: {command[:50]}"
+        )
+    if len(tokens) >= 2 and tokens[0] == "off" and tokens[1] == "all":
+        raise HTTPException(
+            status_code=400,
+            detail="위험 명령은 직접 전송할 수 없습니다: off all"
+        )
+
 
 @app.post("/api/command")
 async def raw_command(req: RawCommandRequest):
-    cmd_lower = req.command.strip().lower()
-    if any(cmd_lower.startswith(p) for p in _DANGEROUS_PATTERNS):
-        raise HTTPException(status_code=400, detail=f"위험 명령은 직접 전송할 수 없습니다: {req.command[:50]}")
+    _validate_raw_command(req.command)
     return await send_and_log(req.command)
 
 

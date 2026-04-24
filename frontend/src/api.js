@@ -8,6 +8,7 @@ async function request(path, options = {}) {
     if (!response.ok) {
       return {
         ok: false,
+        status: response.status,
         error: data.error || `서버 요청에 실패했습니다. (${response.status})`,
         ...data,
       }
@@ -41,11 +42,11 @@ export const api = {
   status: () => get('/status'),
   colorPresets: () => get('/color-presets'),
   selectFixtures: (fixture_numbers) => post('/wizard/select-fixtures', { fixture_numbers }),
-  intensityColor: (intensity, color_preset, color_rgb) =>
-    post('/wizard/intensity-color', { intensity, color_preset, color_rgb }),
-  position: (pan, tilt, focus) => post('/wizard/position', { pan, tilt, focus }),
-  effect: (mode, strobe, slot, value, tempo, high, low) =>
-    post('/wizard/effect', { mode, strobe, slot, value, tempo, high, low }),
+  intensityColor: (intensity, color_preset, color_rgb, fixture_numbers) =>
+    post('/wizard/intensity-color', { intensity, color_preset, color_rgb, fixture_numbers }),
+  position: (pan, tilt, focus, fixture_numbers) => post('/wizard/position', { pan, tilt, focus, fixture_numbers }),
+  effect: (mode, strobe, slot, value, tempo, high, low, fixture_numbers) =>
+    post('/wizard/effect', { mode, strobe, slot, value, tempo, high, low, fixture_numbers }),
   storeCue: (cue_number) => post('/wizard/store-cue', { cue_number }),
   clear: () => post('/wizard/clear', {}),
   clearFixtures: (fixture_numbers) => post('/wizard/clear-fixtures', { fixture_numbers }),
