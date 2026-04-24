@@ -112,9 +112,14 @@ export default function App() {
                   grandMA2 onPC 미연결
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.7, marginBottom: 24 }}>
-                  {autoError.includes('연결 실패') || autoError.includes('TCP') || autoError.includes('타임아웃')
+                  {autoError.includes('연결 실패') || autoError.includes('TCP') || autoError.includes('타임아웃') || autoError.includes('refused')
                     ? <>grandMA2 onPC를 먼저 실행하세요.<br />실행 후 아래 버튼으로 재연결합니다.</>
-                    : <>오류: <span style={{ color: 'var(--status-danger)' }}>{autoError}</span></>
+                    : <>
+                        연결 오류:{' '}
+                        <span style={{ color: 'var(--status-danger)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                          {autoError.split(/[\n|]/)[0].trim().slice(0, 100)}
+                        </span>
+                      </>
                   }
                 </div>
                 <button className="btn primary" onClick={handleRetry} style={{ height: 38, padding: '0 28px' }}>

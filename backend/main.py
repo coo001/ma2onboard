@@ -416,6 +416,49 @@ async def sync_cues():
 
     return {"ok": True, "cues": cues, "synced_count": synced_count, "error": None}
 
+@app.post("/api/cues/reconcile")
+async def reconcile_cues():
+    """MA2의 실제 큐 목록으로 cues.json을 완전히 재동기화.
+    MA2에 없는 로컬 큐는 제거, MA2에만 있는 큐는 추가.
+    기존 레이블은 번호가 일치하는 경우 보존."""
+    if _bridge is not None:
+        return {"ok": False, "error": "브릿지 모드에서는 직접 reconcile을 지원하지 않습니다"}
+    if not ma2_client.connected:
+        return {"ok": False, "error": "MA2에 연결되어 있지 않습니다"}
+    try:
+        ma2_cues = await ma2_client.read_cue_list()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if not ma2_cues:
+        return {"ok": False, "error": "MA2에서 큐 목록을 가져올 수 없습니다. 연결 상태를 확인하세요."}
+
+    async with _cues_lock:
+        existing, _ = _read_cues()
+        label_map = {c["number"]: c.get("label", "") for c in existing}
+
+        ma2_numbers = {c["number"] for c in ma2_cues}
+        local_numbers = {c["number"] for c in existing}
+        removed = local_numbers - ma2_numbers
+        added = ma2_numbers - local_numbers
+
+        new_cues = [
+            {"number": c["number"], "label": label_map.get(c["number"], ""), "source": "ma2"}
+            for c in ma2_cues
+        ]
+        _write_cues(new_cues)
+
+    return {
+        "ok": True,
+        "cues": new_cues,
+        "total": len(new_cues),
+        "added": len(added),
+        "removed": len(removed),
+        "added_list": sorted(added),
+        "removed_list": sorted(removed),
+    }
+
+
 @app.post("/api/cues")
 async def add_cue(req: CueRequest):
     if not re.match(r'^\d+(\.\d+)?$', req.cue_number.strip()):

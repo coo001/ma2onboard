@@ -92,6 +92,7 @@ export const api = {
     post('/preview/position', { fixture_numbers, pan, tilt, focus }),
   previewRestore: () => post('/preview/restore', {}),
   previewRelease: () => post('/preview/release', {}),
+  reconcileCues: () => post('/cues/reconcile', {}),
   getPresets: () => get('/presets'),
   savePositionPreset: (name, pan, tilt, zoom) => post('/presets/position', { name, pan, tilt, zoom }),
   saveColorPreset: (name, h, s, v) => post('/presets/color', { name, h, s, v }),

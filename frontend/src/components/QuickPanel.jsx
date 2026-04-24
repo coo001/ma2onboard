@@ -256,50 +256,70 @@ export default function QuickPanel({ onCueStored, onToast }) {
         <Slider value={intensity} onChange={setIntensity} onCommit={()=>applyIntensity(intensity)} hero />
       </Section>
 
-      {/* 포지션 */}
+      {/* 포지션 + 포지션 프리셋 */}
       <Section title="움직임 / 포커스">
-        {[['PAN',pan,setPan],['TILT',tilt,setTilt],['ZOOM',zoom,setZoom]].map(([label,value,set])=>(
-          <Slider key={label} label={label} showLabel value={value} onChange={set} onCommit={applyPosition}/>
-        ))}
-      </Section>
-
-      {/* 포지션 프리셋 */}
-      <Section title="포지션 프리셋" defaultOpen={true}>
-        <PresetBank
-          presets={posPresets}
-          onApply={applyPositionPreset}
-          onSave={savePositionPreset}
-          onDelete={deletePositionPreset}
-          saveLabel="현재 저장"
-          getTip={p => `PAN ${p.pan} · TILT ${p.tilt} · ZOOM ${p.zoom}`}
-        />
-        {posPresets.length === 0 && (
-          <div style={{fontSize:11,color:'var(--text-dim)'}}>
-            PAN·TILT·ZOOM 맞추고 "현재 저장"으로 프리셋을 추가하세요
+        <div style={{ display: 'flex', gap: 0 }}>
+          <div style={{ flex: 6, minWidth: 0 }}>
+            {[['PAN',pan,setPan],['TILT',tilt,setTilt],['ZOOM',zoom,setZoom]].map(([label,value,set])=>(
+              <Slider key={label} label={label} showLabel value={value} onChange={set} onCommit={applyPosition}/>
+            ))}
           </div>
-        )}
+          <div style={{
+            flex: 4, minWidth: 0,
+            borderLeft: '1px solid var(--border-soft)',
+            paddingLeft: 14, marginLeft: 14,
+            display: 'flex', flexDirection: 'column', gap: 8,
+          }}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.08em'}}>
+              포지션 프리셋
+            </div>
+            <PresetBank
+              presets={posPresets}
+              onApply={applyPositionPreset}
+              onSave={savePositionPreset}
+              onDelete={deletePositionPreset}
+              saveLabel="저장"
+              getTip={p => `PAN ${p.pan} · TILT ${p.tilt} · ZOOM ${p.zoom}`}
+            />
+            {posPresets.length === 0 && (
+              <div style={{fontSize:10,color:'var(--text-dim)',lineHeight:1.5}}>
+                값 맞추고<br/>"저장"으로 추가
+              </div>
+            )}
+          </div>
+        </div>
       </Section>
 
-      {/* 색상 */}
+      {/* 색상 + 색상 프리셋 */}
       <Section title="색상" meta={rgbToHex(...hsvToRgb(color.h,color.s,color.v))}>
-        <ColorPicker color={color} onChange={c=>{setColor(c);applyColor(c)}}/>
-      </Section>
-
-      {/* 색상 프리셋 */}
-      <Section title="색상 프리셋" defaultOpen={true}>
-        <PresetBank
-          presets={colPresets}
-          onApply={applyColorPreset}
-          onSave={saveColorPreset}
-          onDelete={deleteColorPreset}
-          saveLabel="현재 색상 저장"
-          getTip={p => `${rgbToHex(...hsvToRgb(p.h, p.s, p.v))}  H${p.h} S${p.s} V${p.v}`}
-        />
-        {colPresets.length === 0 && (
-          <div style={{fontSize:11,color:'var(--text-dim)'}}>
-            원하는 색상 설정 후 "현재 색상 저장"으로 추가하세요
+        <div style={{ display: 'flex', gap: 0 }}>
+          <div style={{ flex: 6, minWidth: 0 }}>
+            <ColorPicker color={color} onChange={c=>{setColor(c);applyColor(c)}}/>
           </div>
-        )}
+          <div style={{
+            flex: 4, minWidth: 0,
+            borderLeft: '1px solid var(--border-soft)',
+            paddingLeft: 14, marginLeft: 14,
+            display: 'flex', flexDirection: 'column', gap: 8,
+          }}>
+            <div style={{fontSize:10,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',letterSpacing:'0.08em'}}>
+              색상 프리셋
+            </div>
+            <PresetBank
+              presets={colPresets}
+              onApply={applyColorPreset}
+              onSave={saveColorPreset}
+              onDelete={deleteColorPreset}
+              saveLabel="저장"
+              getTip={p => `${rgbToHex(...hsvToRgb(p.h, p.s, p.v))}  H${p.h} S${p.s} V${p.v}`}
+            />
+            {colPresets.length === 0 && (
+              <div style={{fontSize:10,color:'var(--text-dim)',lineHeight:1.5}}>
+                색상 설정 후<br/>"저장"으로 추가
+              </div>
+            )}
+          </div>
+        </div>
       </Section>
 
       {/* 이펙트 */}

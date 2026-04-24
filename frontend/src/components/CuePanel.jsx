@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
-import { Plus, Prev, Next, Check, X } from './Icon'
+import { Plus, Prev, Next, Check, X, Undo } from './Icon'
 
 export default function CuePanel({ refreshKey, onBulkEdit, onToast }) {
   const [cues, setCues] = useState([])
@@ -10,6 +10,7 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast }) {
   const [selectedCues, setSelectedCues] = useState(new Set())
   const [labelDraft, setLabelDraft] = useState(null)
   const [tab, setTab] = useState('sequence')
+  const [reconciling, setReconciling] = useState(false)
   const labelRef = useRef(null)
 
   async function loadCues() {
@@ -60,6 +61,19 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast }) {
     else loadCues()
   }
 
+  async function handleReconcile() {
+    setReconciling(true)
+    const r = await api.reconcileCues()
+    setReconciling(false)
+    if (r.ok === false) {
+      toast(r.error || 'MA2 동기화 실패')
+      return
+    }
+    loadCues()
+    const msg = `MA2 동기화 완료 — 총 ${r.total}개 (추가 ${r.added} / 제거 ${r.removed})`
+    toast(msg)
+  }
+
   function handlePrev() {
     if (sending || !cues.length) return
     const idx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
@@ -91,6 +105,16 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast }) {
             </button>
           </>
         )}
+        <button
+          className="btn sm ghost"
+          onClick={handleReconcile}
+          disabled={reconciling}
+          title="MA2 콘솔에서 실제 큐 목록을 가져와 동기화"
+          style={{ color: reconciling ? 'var(--text-dim)' : 'var(--accent)' }}
+        >
+          <Undo size={13} />
+          {reconciling ? '동기화 중…' : 'MA2 동기화'}
+        </button>
       </div>
 
       {/* Tabs */}
