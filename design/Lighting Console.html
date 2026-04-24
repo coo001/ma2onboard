@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lumen · 조명 콘솔</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: oklch(0.08 0.005 250);
+      font-family: 'Geist', system-ui, sans-serif;
+      overflow: hidden;
+    }
+    #root { width: 100%; height: 100%; }
+
+    /* Canvas overrides so artboards feel like real app windows */
+    .app-frame {
+      width: 100%; height: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px oklch(0 0 0 / 0.5);
+      border: 1px solid oklch(1 0 0 / 0.06);
+    }
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="icons.jsx"></script>
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="console.jsx"></script>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    function ConsoleFrame({ density, defaultTheme = 'dark' }) {
+      const [theme, setTheme] = useState(defaultTheme);
+      return (
+        <div className="app-frame">
+          <LightingConsole theme={theme} density={density} onThemeChange={setTheme} />
+        </div>
+      );
+    }
+
+    function App() {
+      return (
+        <DesignCanvas
+          title="Lumen · 조명 콘솔"
+          subtitle="2가지 밀도 · 다크/라이트 토글 · 완전 인터랙티브"
+        >
+          <DCSection
+            id="comfortable"
+            title="여유 있는 버전"
+            subtitle="접을 수 있는 섹션, 5열 채널 그리드, 넓은 간격 — 장시간 사용에 편안함"
+          >
+            <DCArtboard id="cf-dark" label="Comfortable · Dark" width={1440} height={900}>
+              <ConsoleFrame density="comfortable" defaultTheme="dark" />
+            </DCArtboard>
+            <DCArtboard id="cf-light" label="Comfortable · Light" width={1440} height={900}>
+              <ConsoleFrame density="comfortable" defaultTheme="light" />
+            </DCArtboard>
+          </DCSection>
+
+          <DCSection
+            id="compact"
+            title="컴팩트 버전"
+            subtitle="원본처럼 한 화면에 모든 정보 · 10열 채널 그리드, 좁은 간격 — 공연 중 정보 밀집 필요 시"
+          >
+            <DCArtboard id="cp-dark" label="Compact · Dark" width={1440} height={820}>
+              <ConsoleFrame density="compact" defaultTheme="dark" />
+            </DCArtboard>
+            <DCArtboard id="cp-light" label="Compact · Light" width={1440} height={820}>
+              <ConsoleFrame density="compact" defaultTheme="light" />
+            </DCArtboard>
+          </DCSection>
+        </DesignCanvas>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

@@ -117,13 +117,18 @@ def _validate_row(col_map: dict, row_values: dict, row_index: int) -> dict:
     effect_value = _parse_int_range(get("effect_value"), "effect_value")
     effect_rate = _parse_int_range(get("effect_rate"), "effect_rate")
 
-    r = _parse_int_range(get("color_r"), "color_r")
-    g = _parse_int_range(get("color_g"), "color_g")
-    b = _parse_int_range(get("color_b"), "color_b")
+    r = _parse_int_range(get("color_r"), "color_r", 0, 255)
+    g = _parse_int_range(get("color_g"), "color_g", 0, 255)
+    b = _parse_int_range(get("color_b"), "color_b", 0, 255)
     color_parts = [r, g, b]
     if any(v is not None for v in color_parts):
         if any(v is None for v in color_parts):
             raise RowValidationError("color_r/g/b", "color_r, color_g, color_b는 모두 함께 제공해야 합니다.")
+        # 0-255 RGB 입력이면 자동으로 0-100 스케일로 변환
+        if any(v > 100 for v in [r, g, b] if v is not None):
+            r = round(r / 255 * 100)
+            g = round(g / 255 * 100)
+            b = round(b / 255 * 100)
         color = {"r": r, "g": g, "b": b}
     else:
         color = None

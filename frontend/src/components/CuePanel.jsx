@@ -1,126 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api'
+import { Plus, Prev, Next, Check, X } from './Icon'
 
-const s = {
-  panel: {
-    background: '#13151f',
-    borderRight: '1px solid #2e334d',
-    padding: '12px 24px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-    height: '100%',
-    overflowY: 'auto',
-  },
-  title: {
-    fontSize: 'var(--font-sm)',
-    fontWeight: 700,
-    color: '#7a7f9a',
-    textTransform: 'uppercase',
-    letterSpacing: '.05em',
-  },
-  cueList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-    flex: 1,
-  },
-  cueRow: (active) => ({
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    padding: '8px 12px',
-    borderRadius: 8,
-    background: active ? '#2a2000' : '#1a1d27',
-    border: `1px solid ${active ? '#f0a500' : '#2e334d'}`,
-  }),
-  cueNum: (active) => ({
-    fontSize: 'var(--font-md)',
-    fontWeight: 800,
-    color: active ? '#f0a500' : '#e8eaf0',
-    flex: 1,
-  }),
-  goBtn: (sending) => ({
-    padding: '6px 16px',
-    borderRadius: 6,
-    border: 'none',
-    background: sending ? '#2e334d' : '#f0a500',
-    color: sending ? '#5a5f7a' : '#000',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 700,
-    cursor: sending ? 'default' : 'pointer',
-    flexShrink: 0,
-  }),
-  deleteBtn: {
-    padding: '4px 10px',
-    borderRadius: 6,
-    border: '1px solid rgba(242,107,107,.4)',
-    background: 'rgba(242,107,107,.1)',
-    color: '#f26b6b',
-    fontSize: 'var(--font-sm)',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
-  navRow: {
-    display: 'flex',
-    gap: 8,
-    marginTop: 4,
-  },
-  navBtn: (disabled) => ({
-    flex: 1,
-    padding: '8px',
-    borderRadius: 8,
-    border: '1px solid #2e334d',
-    background: disabled ? '#13151f' : '#22263a',
-    color: disabled ? '#3a3f55' : '#e8eaf0',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 700,
-    cursor: disabled ? 'default' : 'pointer',
-  }),
-  empty: {
-    fontSize: 'var(--font-sm)',
-    color: '#7a7f9a',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    padding: '20px 0',
-  },
-  colHeader: {
-    fontSize: '0.7em',
-    fontWeight: 700,
-    color: '#4a4f6a',
-    textTransform: 'uppercase',
-    letterSpacing: '.04em',
-    textAlign: 'center',
-    flexShrink: 0,
-    whiteSpace: 'nowrap',
-  },
-  toast: {
-    position: 'fixed',
-    bottom: 32,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    background: '#2a0a0a',
-    border: '1px solid rgba(242,107,107,.5)',
-    color: '#f26b6b',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 600,
-    padding: '10px 20px',
-    borderRadius: 10,
-    zIndex: 9999,
-    pointerEvents: 'none',
-    whiteSpace: 'nowrap',
-  },
-}
-
-export default function CuePanel({ refreshKey, onBulkEdit }) {
+export default function CuePanel({ refreshKey, onBulkEdit, onToast }) {
   const [cues, setCues] = useState([])
   const [currentCue, setCurrentCue] = useState(null)
   const [fadeTimes, setFadeTimes] = useState({})
   const [sending, setSending] = useState(false)
-  const [error, setError] = useState(null)
   const [selectedCues, setSelectedCues] = useState(new Set())
+  const [labelDraft, setLabelDraft] = useState(null)
+  const [tab, setTab] = useState('sequence')
+  const labelRef = useRef(null)
 
   async function loadCues() {
     const r = await api.getCues()
@@ -129,125 +19,171 @@ export default function CuePanel({ refreshKey, onBulkEdit }) {
 
   useEffect(() => { loadCues() }, [])
   useEffect(() => { if (refreshKey) loadCues() }, [refreshKey])
+  useEffect(() => { if (labelDraft) labelRef.current?.focus() }, [labelDraft?.num])
 
-  function showError(msg) {
-    setError(msg)
-    setTimeout(() => setError(null), 2000)
-  }
+  function toast(msg) { onToast?.(msg) }
 
   async function handleExecute(num) {
+    if (sending) return
     try {
       setSending(true)
       const fade = parseFloat(fadeTimes[num] ?? 0) || 0
       const r = await api.executeCue(num, fade)
-      if (r.ok === false) showError(r.error || '실행 실패')
+      if (r.ok === false) toast(r.error || '실행 실패')
       else setCurrentCue(num)
     } finally {
       setSending(false)
     }
   }
 
-  function toggleSelectCue(num) {
-    setSelectedCues(prev => {
-      const next = new Set(prev)
-      if (next.has(num)) next.delete(num)
-      else next.add(num)
-      return next
-    })
-  }
-
   async function handleDelete(num) {
     const r = await api.deleteCue(num)
-    if (r.ok === false) { showError(r.error || '삭제 실패'); return }
+    if (r.ok === false) { toast(r.error || '삭제 실패'); return }
     if (currentCue === num) setCurrentCue(null)
     loadCues()
   }
 
-  function handlePrev() {
-    if (sending) return
-    if (!cues.length) return
-    const idx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
-    const prevIdx = idx <= 0 ? cues.length - 1 : idx - 1
-    handleExecute(cues[prevIdx].number)
+  function toggleSelect(num) {
+    setSelectedCues(prev => {
+      const next = new Set(prev)
+      next.has(num) ? next.delete(num) : next.add(num)
+      return next
+    })
   }
 
-  function handleNext() {
-    if (sending) return
-    if (!cues.length) return
-    const idx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
-    const nextIdx = idx >= cues.length - 1 ? 0 : idx + 1
-    handleExecute(cues[nextIdx].number)
+  async function commitLabel() {
+    if (!labelDraft) return
+    const draft = labelDraft
+    setLabelDraft(null)
+    const r = await api.renameCue(draft.num, draft.value)
+    if (r.ok === false) toast(r.error || '이름 변경 실패')
+    else loadCues()
   }
+
+  function handlePrev() {
+    if (sending || !cues.length) return
+    const idx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
+    handleExecute(cues[idx <= 0 ? cues.length - 1 : idx - 1].number)
+  }
+  function handleNext() {
+    if (sending || !cues.length) return
+    const idx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
+    handleExecute(cues[idx >= cues.length - 1 ? 0 : idx + 1].number)
+  }
+
+  const playing = currentCue
 
   return (
-    <div style={s.panel}>
-      {error && <div style={s.toast}>{error}</div>}
+    <div className="col">
+      {/* Header */}
+      <div className="cue-header">
+        <h3>큐 시퀀스</h3>
+        <span className="cue-count">{cues.length}</span>
+        <div className="grow" />
+        {selectedCues.size > 0 && (
+          <>
+            <button className="btn sm primary"
+              onClick={() => onBulkEdit?.(Array.from(selectedCues))}>
+              {selectedCues.size}개 편집
+            </button>
+            <button className="btn sm ghost" onClick={() => setSelectedCues(new Set())}>
+              <X size={12} />
+            </button>
+          </>
+        )}
+      </div>
 
-      {selectedCues.size > 0 ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#1a2540', borderRadius: 8, border: '1px solid #2e5599' }}>
-          <span style={{ fontSize: 'var(--font-sm)', color: '#7ab3f0', fontWeight: 600 }}>
-            {selectedCues.size}개 선택됨
-          </span>
-          <div style={{ flex: 1 }} />
-          <button
-            className="btn btn-primary"
-            style={{ fontSize: 12, padding: '4px 14px' }}
-            onClick={() => onBulkEdit && onBulkEdit(Array.from(selectedCues))}
-          >
-            일괄 편집
-          </button>
-          <button
-            className="btn btn-secondary"
-            style={{ fontSize: 12, padding: '4px 10px' }}
-            onClick={() => setSelectedCues(new Set())}
-          >
-            선택 해제
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 12 }}>
-          <span style={s.title}>큐 시퀀스</span>
-          <div style={{ flex: 1 }} />
-          <span style={{ ...s.colHeader, width: 52 }}>페이드</span>
-          <span style={{ ...s.colHeader, width: 52 }}>실행</span>
-          <span style={{ ...s.colHeader, width: 36 }}>제거</span>
-        </div>
-      )}
-
-      <div style={s.cueList}>
-        {cues.length === 0 && <div style={s.empty}>큐가 없습니다.</div>}
-        {cues.map(cue => (
-          <div key={cue.number} style={s.cueRow(currentCue === cue.number)}>
-            <input
-              type="checkbox"
-              checked={selectedCues.has(cue.number)}
-              onChange={() => toggleSelectCue(cue.number)}
-              style={{ flexShrink: 0, width: 16, height: 16, cursor: 'pointer', accentColor: '#5599f0' }}
-            />
-            <span style={s.cueNum(currentCue === cue.number)}>
-              Cue {cue.number}
-              {cue.label && <span style={{ color: '#7a7f9a', fontSize: '0.8em', marginLeft: 6 }}>{cue.label}</span>}
-            </span>
-            <input
-              type="number"
-              min="0"
-              step="0.1"
-              value={fadeTimes[cue.number] ?? 0}
-              onChange={e => setFadeTimes(prev => ({ ...prev, [cue.number]: e.target.value }))}
-              style={{ width: 52, padding: '4px 6px', borderRadius: 6, border: '1px solid #2e334d', background: '#13151f', color: '#e8eaf0', fontSize: 'var(--font-sm)', textAlign: 'center', flexShrink: 0 }}
-              title="페이드 시간 (초)"
-            />
-            <button style={s.goBtn(sending)} onClick={() => handleExecute(cue.number)} disabled={sending}>GO</button>
-            <button style={s.deleteBtn} onClick={() => handleDelete(cue.number)}>✕</button>
-          </div>
+      {/* Tabs */}
+      <div className="cue-tabs">
+        {[['sequence','시퀀스'],['run','실행 로그']].map(([id, label]) => (
+          <button key={id} className={`cue-tab${tab === id ? ' active' : ''}`}
+            onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
 
-      <div style={s.navRow}>
-        <button style={s.navBtn(!cues.length || sending)} onClick={handlePrev} disabled={!cues.length || sending}>◀ 이전</button>
-        <button style={s.navBtn(!cues.length || sending)} onClick={handleNext} disabled={!cues.length || sending}>다음 ▶</button>
+      {/* Cue list */}
+      <div className="cue-list">
+        {cues.length === 0 && (
+          <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-dim)', fontSize: 12 }}>
+            저장된 큐가 없습니다
+          </div>
+        )}
+        {cues.map(cue => {
+          const active = currentCue === cue.number
+          const editing = labelDraft?.num === cue.number
+          return (
+            <div key={cue.number} className={`cue-row${active ? ' playing' : ''}`}>
+              {/* Checkbox */}
+              <div
+                className={`cue-check${selectedCues.has(cue.number) ? ' checked' : ''}`}
+                onClick={() => toggleSelect(cue.number)}
+              >
+                {selectedCues.has(cue.number) && <Check size={10} stroke={3} />}
+              </div>
+
+              {/* Number + label */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
+                <div className="cue-num">#{cue.number}</div>
+                {editing ? (
+                  <input
+                    ref={labelRef}
+                    className="cue-label-edit"
+                    value={labelDraft.value}
+                    placeholder="이름 입력…"
+                    onChange={e => setLabelDraft(d => ({ ...d, value: e.target.value }))}
+                    onKeyDown={e => { if (e.key === 'Enter') commitLabel(); if (e.key === 'Escape') setLabelDraft(null) }}
+                    onBlur={commitLabel}
+                  />
+                ) : (
+                  <div
+                    style={{ fontSize: 10, color: cue.label ? 'var(--text-muted)' : 'var(--text-dim)', cursor: 'pointer', fontStyle: cue.label ? 'normal' : 'italic' }}
+                    onDoubleClick={() => setLabelDraft({ num: cue.number, value: cue.label || '' })}
+                    title="더블클릭으로 이름 편집"
+                  >
+                    {cue.label || '이름 없음'}
+                  </div>
+                )}
+              </div>
+
+              {/* Fade */}
+              <input
+                className="cue-delay"
+                type="number" min="0" step="0.1"
+                value={fadeTimes[cue.number] ?? 0}
+                onChange={e => setFadeTimes(p => ({ ...p, [cue.number]: e.target.value }))}
+                title="페이드 (초)"
+              />
+              <span className="cue-delay-unit">s</span>
+
+              {/* GO */}
+              <button className="btn sm go" onClick={() => handleExecute(cue.number)} disabled={sending}>
+                GO
+              </button>
+
+              {/* Delete */}
+              <button className="btn sm icon-only ghost" onClick={() => handleDelete(cue.number)}
+                style={{ color: 'var(--text-dim)' }} title="삭제">
+                <X size={12} />
+              </button>
+            </div>
+          )
+        })}
       </div>
 
+      {/* Footer */}
+      <div className="cue-footer">
+        <div className="live-indicator">
+          {playing ? (
+            <><span style={{ width:6, height:6, borderRadius:99, background:'var(--status-live)', display:'inline-block' }} /> 재생 중 #{playing}</>
+          ) : '대기 중'}
+        </div>
+        <button className="btn sm ghost" onClick={handlePrev} disabled={!cues.length || sending}>
+          <Prev size={12} /> 이전
+        </button>
+        <button className="btn sm primary" onClick={handleNext} disabled={!cues.length || sending}>
+          다음 <Next size={12} />
+        </button>
+      </div>
     </div>
   )
 }

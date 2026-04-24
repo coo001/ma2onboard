@@ -215,7 +215,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH"],
     allow_headers=["Content-Type"],
 )
 
@@ -896,6 +896,24 @@ async def delete_cue(cue_number: str):
     await send_and_log(cmd_delete_cue(cue_number))
     return {"ok": True, "cues": cues}
 
+class RenameCueRequest(BaseModel):
+    label: str
+
+@app.patch("/api/cues/{cue_number}/label")
+async def rename_cue(cue_number: str, req: RenameCueRequest):
+    if not re.match(r'^\d+(\.\d+)?$', cue_number.strip()):
+        raise HTTPException(status_code=400, detail="큐 번호는 숫자 형식이어야 합니다.")
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+        idx = next((i for i, c in enumerate(cues) if c["number"] == cue_number), None)
+        if idx is None:
+            raise HTTPException(status_code=404, detail=f"큐 '{cue_number}'를 찾을 수 없습니다.")
+        cues[idx] = {**cues[idx], "label": req.label.strip()}
+        _write_cues(cues)
+    return {"ok": True, "cues": cues}
+
 class ExecuteCueRequest(BaseModel):
     fade: float = 0.0
 
@@ -1363,6 +1381,89 @@ async def fixture_states_endpoint():
     except ImportError:
         from .ai_controller import get_state
     return {"states": {str(i): get_state(i) for i in range(1, 11)}}
+
+
+# ─── Presets ─────────────────────────────────────────────────────
+_PRESETS_FILE = Path(__file__).resolve().parent / "presets.json"
+_presets_lock = asyncio.Lock()
+
+def _read_presets() -> dict:
+    if not _PRESETS_FILE.exists():
+        return {"position": [], "color": []}
+    try:
+        data = json.loads(_PRESETS_FILE.read_text(encoding="utf-8"))
+        data.setdefault("position", [])
+        data.setdefault("color", [])
+        return data
+    except Exception:
+        return {"position": [], "color": []}
+
+def _write_presets(data: dict) -> None:
+    _PRESETS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+class PositionPresetCreate(BaseModel):
+    name: str
+    pan: int
+    tilt: int
+    zoom: int
+
+class ColorPresetCreate(BaseModel):
+    name: str
+    h: int
+    s: int
+    v: int
+
+class PresetRename(BaseModel):
+    name: str
+
+@app.get("/api/presets")
+async def get_presets():
+    async with _presets_lock:
+        return _read_presets()
+
+@app.post("/api/presets/position")
+async def create_position_preset(req: PositionPresetCreate):
+    async with _presets_lock:
+        data = _read_presets()
+        preset = {"id": str(_uuid.uuid4())[:8], "name": req.name.strip()[:30], "pan": req.pan, "tilt": req.tilt, "zoom": req.zoom}
+        data["position"].append(preset)
+        _write_presets(data)
+    return {"ok": True, "preset": preset}
+
+@app.post("/api/presets/color")
+async def create_color_preset(req: ColorPresetCreate):
+    async with _presets_lock:
+        data = _read_presets()
+        preset = {"id": str(_uuid.uuid4())[:8], "name": req.name.strip()[:30], "h": req.h, "s": req.s, "v": req.v}
+        data["color"].append(preset)
+        _write_presets(data)
+    return {"ok": True, "preset": preset}
+
+@app.delete("/api/presets/{kind}/{preset_id}")
+async def delete_preset(kind: str, preset_id: str):
+    if kind not in ("position", "color"):
+        raise HTTPException(status_code=400, detail="kind는 position 또는 color여야 합니다.")
+    async with _presets_lock:
+        data = _read_presets()
+        before = len(data[kind])
+        data[kind] = [p for p in data[kind] if p["id"] != preset_id]
+        if len(data[kind]) == before:
+            raise HTTPException(status_code=404, detail="프리셋을 찾을 수 없습니다.")
+        _write_presets(data)
+    return {"ok": True}
+
+@app.patch("/api/presets/{kind}/{preset_id}")
+async def rename_preset(kind: str, preset_id: str, req: PresetRename):
+    if kind not in ("position", "color"):
+        raise HTTPException(status_code=400, detail="kind는 position 또는 color여야 합니다.")
+    async with _presets_lock:
+        data = _read_presets()
+        for p in data[kind]:
+            if p["id"] == preset_id:
+                p["name"] = req.name.strip()[:30]
+                _write_presets(data)
+                return {"ok": True, "preset": p}
+        raise HTTPException(status_code=404, detail="프리셋을 찾을 수 없습니다.")
 
 
 @app.get("/api/health")

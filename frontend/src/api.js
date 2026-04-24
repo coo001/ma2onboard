@@ -52,9 +52,6 @@ export const api = {
   clearFixtures: (fixture_numbers) => post('/wizard/clear-fixtures', { fixture_numbers }),
   rawCommand: (command) => post('/command', { command }),
   aiCommand: (text) => post('/ai-command', { text }),
-  getGroups: () => get('/groups'),
-  createGroup: (name, fixture_numbers) => post('/groups', { name, fixture_numbers }),
-  deleteGroup: (name) => request(`/groups/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   fixtureStates: () => get('/fixture-states'),
   getCues: () => get('/cues'),
   addCue: (cue_number, label = '') => post('/cues', { cue_number, label }),
@@ -79,6 +76,12 @@ export const api = {
   importTemplateUrl: () => BASE + '/cues/import-template',
   completeCueChat: (sessionId, message) => post(`/cues/complete/${sessionId}`, { message }),
   applyCueSession: (sessionId, onError = 'skip') => post(`/cues/complete/${sessionId}/apply`, { on_error: onError }),
+  renameCue: (cue_number, label) =>
+    request(`/cues/${encodeURIComponent(cue_number)}/label`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    }),
   bulkEditCues: (cue_numbers, fixture_numbers, color, position) =>
     post('/cues/bulk-edit', { cue_numbers, fixture_numbers, color, position }),
   previewSnapshot: (cue_numbers, fixture_numbers) =>
@@ -89,4 +92,8 @@ export const api = {
     post('/preview/position', { fixture_numbers, pan, tilt, focus }),
   previewRestore: () => post('/preview/restore', {}),
   previewRelease: () => post('/preview/release', {}),
+  getPresets: () => get('/presets'),
+  savePositionPreset: (name, pan, tilt, zoom) => post('/presets/position', { name, pan, tilt, zoom }),
+  saveColorPreset: (name, h, s, v) => post('/presets/color', { name, h, s, v }),
+  deletePreset: (kind, id) => request(`/presets/${kind}/${id}`, { method: 'DELETE' }),
 }

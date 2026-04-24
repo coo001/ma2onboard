@@ -1,525 +1,335 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { api } from '../api'
-import MAColorPicker from './MAColorPicker'
+import Section from './Section'
+import Slider from './Slider'
+import { Save } from './Icon'
 
-// 0-255 RGB → 0-100 스케일 변환 (백엔드 API 규격)
-function rgb255To100(r, g, b) {
-  return {
-    r: Math.round((r / 255) * 100),
-    g: Math.round((g / 255) * 100),
-    b: Math.round((b / 255) * 100),
-  }
+// ── Color utils ────────────────────────────────────────────────────
+function hsvToRgb(h, s, v) {
+  h /= 360; s /= 100; v /= 100
+  const i = Math.floor(h * 6), f = h * 6 - i
+  const p = v*(1-s), q = v*(1-f*s), t = v*(1-(1-f)*s)
+  let r, g, b
+  switch(i%6){ case 0:r=v;g=t;b=p;break; case 1:r=q;g=v;b=p;break; case 2:r=p;g=v;b=t;break; case 3:r=p;g=q;b=v;break; case 4:r=t;g=p;b=v;break; default:r=v;g=p;b=q }
+  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)]
+}
+function rgbToHex(r,g,b) { return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase() }
+function hsvToApi(h,s,v) { const[r,g,b]=hsvToRgb(h,s,v); return{r:Math.round(r/2.55),g:Math.round(g/2.55),b:Math.round(b/2.55)} }
+function hexToHsv(hex) {
+  const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn
+  let h=0; if(d){if(mx===r)h=((g-b)/d)%6;else if(mx===g)h=(b-r)/d+2;else h=(r-g)/d+4;h=Math.round(h*60);if(h<0)h+=360}
+  return{h,s:mx?Math.round((d/mx)*100):0,v:Math.round(mx*100)}
 }
 
-const s = {
-  panel: {
-    background: '#13151f',
-    borderRight: '1px solid #2e334d',
-    padding: '12px 24px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-    height: '100%',
-    overflowY: 'auto',
-  },
-  row: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  label: {
-    fontSize: 'var(--font-sm)',
-    fontWeight: 700,
-    color: '#7a7f9a',
-    textTransform: 'uppercase',
-    letterSpacing: '.05em',
-    minWidth: 60,
-    flexShrink: 0,
-  },
-  fixtureChip: (active) => ({
-    width: 40,
-    height: 40,
-    borderRadius: '50%',
-    border: `2px solid ${active ? '#f0a500' : '#2e334d'}`,
-    background: active ? '#2a2000' : '#22263a',
-    color: active ? '#f0a500' : '#7a7f9a',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 800,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  }),
-  sliderWrap: {
-    flex: 1,
-    minWidth: 120,
-    maxWidth: 260,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
-  slider: {
-    flex: 1,
-    height: 4,
-    accentColor: '#f0a500',
-    cursor: 'pointer',
-  },
-  sliderVal: {
-    fontSize: 'var(--font-md)',
-    fontWeight: 800,
-    color: '#f0a500',
-    width: 72,
-    textAlign: 'center',
-    background: 'transparent',
-    border: '1px solid transparent',
-    borderRadius: 6,
-    padding: '2px 6px',
-    outline: 'none',
-    MozAppearance: 'textfield',
-    flexShrink: 0,
-  },
-  clearBtn: {
-    padding: '6px 14px',
-    borderRadius: 8,
-    background: 'rgba(242,107,107,.15)',
-    border: '1px solid rgba(242,107,107,.4)',
-    color: '#f26b6b',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 700,
-    cursor: 'pointer',
-    flexShrink: 0,
-    whiteSpace: 'nowrap',
-  },
-  toast: {
-    position: 'fixed',
-    bottom: 32,
-    left: '50%',
-    transform: 'translateX(-50%)',
-    background: '#2a0a0a',
-    border: '1px solid rgba(242,107,107,.5)',
-    color: '#f26b6b',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 600,
-    padding: '10px 20px',
-    borderRadius: 10,
-    zIndex: 9999,
-    pointerEvents: 'none',
-    whiteSpace: 'nowrap',
-  },
-  fixtureStatus: {
-    fontSize: 'var(--font-sm)',
-    color: '#a0a4bc',
-    marginLeft: 6,
-  },
-  noFixture: {
-    fontSize: 'var(--font-sm)',
-    color: '#7a7f9a',
-    fontStyle: 'italic',
-  },
-  cueInput: {
-    width: 100,
-    padding: '6px 10px',
-    borderRadius: 8,
-    border: '1px solid #2e334d',
-    background: '#1a1d27',
-    color: '#e8eaf0',
-    fontSize: 'var(--font-sm)',
-    outline: 'none',
-  },
-  cueBtn: (disabled) => ({
-    padding: '6px 16px',
-    borderRadius: 8,
-    border: 'none',
-    background: disabled ? '#2e334d' : '#f0a500',
-    color: disabled ? '#5a5f7a' : '#000',
-    fontSize: 'var(--font-sm)',
-    fontWeight: 700,
-    cursor: disabled ? 'default' : 'pointer',
-    flexShrink: 0,
-  }),
-}
+const PRESETS_HEX = ['#FFFFFF','#FFD166','#FF5E5B','#E63946','#FF6B9D','#B983FF','#5E60CE','#48BFE3','#64DFDF','#80ED99','#FAF3A0','#FF9F1C']
 
-export default function QuickPanel({ fixtures, onFixturesChange, onCueStored }) {
-  const [brightness, setBrightness] = useState(80)
-  const [qValue, setQValue] = useState(0)
-  const [pan, setPan] = useState(50)
-  const [tilt, setTilt] = useState(50)
-  const [focus, setFocus] = useState(50)
-  const [effectMode, setEffectMode] = useState('none')
-  const [strobeVal, setStrobeVal] = useState(0)
-  const [effectSlot, setEffectSlot] = useState(1)
-  const [effectSlotValue, setEffectSlotValue] = useState(50)
-  const [effectTempo, setEffectTempo] = useState(50)
-  const [effectHigh, setEffectHigh] = useState(100)
-  const [effectLow, setEffectLow] = useState(0)
-  const [sending, setSending] = useState(false)
-  const [feedback, setFeedback] = useState(null)
-  const [pickerColor, setPickerColor] = useState({ r: 255, g: 255, b: 255 })
-  const [cueNum, setCueNum] = useState('')
-  const colorDebounceRef = useRef(null)
-  const prevFixturesRef = useRef([])
-
+// ── Color Picker ───────────────────────────────────────────────────
+function ColorPicker({ color, onChange }) {
+  const svRef = useRef(null), hueRef = useRef(null)
+  const [dragSV, setDragSV] = useState(false), [dragHue, setDragHue] = useState(false)
+  const { h, s, v } = color
+  const setSV = useCallback((cx,cy) => {
+    const r=svRef.current.getBoundingClientRect()
+    onChange({...color,s:Math.round(Math.max(0,Math.min(1,(cx-r.left)/r.width))*100),v:Math.round((1-Math.max(0,Math.min(1,(cy-r.top)/r.height)))*100)})
+  },[color,onChange])
+  const setHue = useCallback((cx) => {
+    const r=hueRef.current.getBoundingClientRect()
+    onChange({...color,h:Math.round(Math.max(0,Math.min(1,(cx-r.left)/r.width))*360)})
+  },[color,onChange])
   useEffect(() => {
-    const prev = prevFixturesRef.current
-    const added = fixtures.filter(f => !prev.includes(f))
-    prevFixturesRef.current = fixtures
-    if (added.length === 0) return
-    const target = added[added.length - 1]
-    api.fixtureStates().then(data => {
-      const state = data.states?.[String(target)]
-      if (!state) return
-      setBrightness(state.intensity)
-      setPan(state.pan ?? 50)
-      setTilt(state.tilt ?? 50)
-      setFocus(state.focus ?? 50)
-      setPickerColor({
-        r: Math.round(((state.color?.r ?? 0) / 100) * 255),
-        g: Math.round(((state.color?.g ?? 0) / 100) * 255),
-        b: Math.round(((state.color?.b ?? 0) / 100) * 255),
-      })
-    })
-  }, [fixtures])
+    if(!dragSV&&!dragHue) return
+    const move=(e)=>dragSV?setSV(e.clientX,e.clientY):setHue(e.clientX)
+    const up=()=>{setDragSV(false);setDragHue(false)}
+    window.addEventListener('pointermove',move); window.addEventListener('pointerup',up)
+    return()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up)}
+  })
+  const [r,g,b]=hsvToRgb(h,s,v); const hex=rgbToHex(r,g,b)
+  return (
+    <div className="cp-wrap">
+      <div ref={svRef} className="cp-hsv"
+        style={{background:`linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,transparent),oklch(0.7 0.22 ${h})`}}
+        onPointerDown={e=>{setDragSV(true);setSV(e.clientX,e.clientY)}}>
+        <div className="cp-puck" style={{left:`${s}%`,top:`${100-v}%`}}/>
+      </div>
+      <div ref={hueRef} className="cp-hue" onPointerDown={e=>{setDragHue(true);setHue(e.clientX)}}>
+        <div className="cp-hue-puck" style={{left:`${(h/360)*100}%`,background:`hsl(${h},100%,50%)`}}/>
+      </div>
+      <div className="cp-readout">
+        <div className="cp-swatch" style={{background:hex}}/>
+        <div className="cp-values">
+          <div><span className="k">HEX</span><span className="v">{hex}</span></div>
+          <div><span className="k">RGB</span><span className="v">{r} {g} {b}</span></div>
+        </div>
+      </div>
+      <div className="cp-presets">
+        {PRESETS_HEX.map(p=>(
+          <div key={p} className="cp-preset" style={{background:p}} onClick={()=>onChange(hexToHsv(p))}/>
+        ))}
+      </div>
+    </div>
+  )
+}
 
-  function setFb(message, ok) {
-    setFeedback({ message, ok })
-    setTimeout(() => setFeedback(null), 1800)
-  }
+// ── Preset Bank ────────────────────────────────────────────────────
+function PresetBank({ presets, onApply, onSave, onDelete, saveLabel = '저장', getTip }) {
+  const [adding, setAdding] = useState(false)
+  const [name, setName] = useState('')
+  const inputRef = useRef(null)
 
-  function toggleFixture(num) {
-    const next = fixtures.includes(num)
-      ? fixtures.filter((f) => f !== num)
-      : [...fixtures, num].sort((a, b) => a - b)
-    onFixturesChange(next)
-  }
+  useEffect(() => { if (adding) inputRef.current?.focus() }, [adding])
 
-  async function applyToFixtures(fn) {
-    if (fixtures.length === 0) {
-      setFb('조명을 먼저 선택하세요.', false)
-      return
-    }
-    setSending(true)
-    await api.selectFixtures(fixtures)
-    const result = await fn()
-    setSending(false)
-    if (result.ok === false) setFb(result.error, false)
-  }
-
-  function onColorChange(r, g, b) {
-    setPickerColor({ r, g, b })
-    if (colorDebounceRef.current) clearTimeout(colorDebounceRef.current)
-    colorDebounceRef.current = setTimeout(async () => {
-      const rgb100 = rgb255To100(r, g, b)
-      await applyToFixtures(() => api.intensityColor(brightness, null, rgb100, fixtures))
-    }, 80)
-  }
-
-  async function handleBrightnessCommit() {
-    await applyToFixtures(() => api.intensityColor(brightness, null, null, fixtures))
-  }
-
-  async function handlePositionCommit() {
-    await applyToFixtures(() => api.position(pan, tilt, focus, fixtures))
-  }
-
-  async function handleStoreCue() {
-    if (!cueNum.trim() || sending) return
-    const nums = cueNum.split(/[\s,]+/).map(n => n.trim()).filter(n => /^\d+(\.\d+)?$/.test(n))
-    if (nums.length === 0) { setFb('유효한 큐 번호를 입력하세요.', false); return }
-    setSending(true)
-    const failed = []
-    for (const n of nums) {
-      const result = await api.storeCue(n)
-      if (!result || result.ok === false) failed.push(n)
-      else {
-        const addResult = await api.addCue(n)
-        if (addResult && addResult.ok === false && addResult.status !== 409) {
-          failed.push(n)
-        }
-      }
-    }
-    setSending(false)
-    if (failed.length > 0) {
-      setFb(`큐 ${failed.join(', ')} 저장 실패`, false)
-    } else {
-      setFb(`큐 ${nums.join(', ')} 저장 완료.`, true)
-      onCueStored?.()
-      setCueNum('')
-    }
-  }
-
-  async function handleEffectApply(mode, strobe, slot, slotVal, tempo, high, low) {
-    await applyToFixtures(() => api.effect(
-      mode,
-      mode === 'strobe' ? strobe : null,
-      mode === 'slot' ? slot : null,
-      mode === 'slot' ? slotVal : null,
-      mode === 'slot' ? tempo : null,
-      mode === 'slot' ? high : null,
-      mode === 'slot' ? low : null,
-      fixtures,
-    ))
-  }
-
-  async function handleClearAll() {
-    setSending(true)
-    const result = await api.clear()
-    setSending(false)
-    setFb(result.ok === false ? result.error : '전체 꺼짐.', result.ok !== false)
+  function handleSave() {
+    const n = name.trim()
+    if (!n) { setAdding(false); setName(''); return }
+    onSave(n)
+    setAdding(false)
+    setName('')
   }
 
   return (
-    <div style={s.panel}>
-      {feedback && <div style={s.toast}>{feedback.message}</div>}
-      {/* 조명 선택 + 전체 끄기 */}
-      <div style={s.row}>
-        <span style={s.label}>조명</span>
-        {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
-          <div
-            key={num}
-            style={s.fixtureChip(fixtures.includes(num))}
-            onClick={() => toggleFixture(num)}
-          >
-            {num}
-          </div>
+    <div className="preset-bank">
+      {presets.map(p => (
+        <div key={p.id} className="preset-chip" onClick={() => onApply(p)}
+          data-tip={getTip ? getTip(p) : undefined}>
+          {p.h !== undefined && (
+            <span className="preset-swatch" style={{ background: rgbToHex(...hsvToRgb(p.h, p.s, p.v)) }} />
+          )}
+          {p.name}
+          <span className="preset-del" onClick={e => { e.stopPropagation(); onDelete(p.id) }}>×</span>
+        </div>
+      ))}
+      {adding ? (
+        <>
+          <input
+            ref={inputRef}
+            className="preset-name-input"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="이름 입력…"
+            onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') { setAdding(false); setName('') } }}
+            onBlur={handleSave}
+          />
+        </>
+      ) : (
+        <button className="preset-add-btn" onClick={() => setAdding(true)}>+ {saveLabel}</button>
+      )}
+    </div>
+  )
+}
+
+// ── Main Component ─────────────────────────────────────────────────
+const CHANNEL_COUNT = 10
+
+export default function QuickPanel({ onCueStored, onToast }) {
+  const [selected, setSelected] = useState([])
+  const [channelIntensities, setChannelIntensities] = useState(() => Array(CHANNEL_COUNT).fill(0))
+  const [intensity, setIntensity] = useState(80)
+  const [color, setColor] = useState({ h: 210, s: 0, v: 100 })
+  const [pan, setPan] = useState(50)
+  const [tilt, setTilt] = useState(50)
+  const [zoom, setZoom] = useState(50)
+  const [effect, setEffect] = useState('none')
+  const [strobeRate, setStrobeRate] = useState(4)
+  const [cueSaveName, setCueSaveName] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [posPresets, setPosPresets] = useState([])
+  const [colPresets, setColPresets] = useState([])
+  const colorDebounce = useRef(null)
+
+  // ── 프리셋 로드 ──────────────────────────────────────────────────
+  useEffect(() => {
+    api.getPresets().then(r => {
+      if (r.position) setPosPresets(r.position)
+      if (r.color) setColPresets(r.color)
+    })
+  }, [])
+
+  // ── 채널 ────────────────────────────────────────────────────────
+  const toggleChannel = (id) => setSelected(sel => sel.includes(id) ? sel.filter(x=>x!==id) : [...sel,id])
+  const selectAll = () => setSelected(Array.from({length:CHANNEL_COUNT},(_,i)=>i+1))
+  const clearAll = () => setSelected([])
+
+  // ── API 호출 ─────────────────────────────────────────────────────
+  async function applyIntensity(val) {
+    if (!selected.length) return
+    await api.selectFixtures(selected)
+    await api.intensityColor(val, null, null, selected)
+    setChannelIntensities(prev => { const n=[...prev]; selected.forEach(id=>{n[id-1]=val}); return n })
+  }
+  async function applyPosition(p=pan, t=tilt, z=zoom) {
+    if (!selected.length) return
+    await api.selectFixtures(selected)
+    await api.position(p, t, z, selected)
+  }
+  async function applyColor(c) {
+    if (!selected.length) return
+    if (colorDebounce.current) clearTimeout(colorDebounce.current)
+    colorDebounce.current = setTimeout(async () => {
+      await api.selectFixtures(selected)
+      await api.intensityColor(intensity, null, hsvToApi(c.h,c.s,c.v), selected)
+    }, 80)
+  }
+  async function applyEffect(mode, rate) {
+    if (!selected.length) return
+    await api.selectFixtures(selected)
+    await api.effect(mode, mode==='strobe'?rate:null, null, null, null, null, null, selected)
+  }
+  async function handleClear() {
+    const r = await api.clear()
+    setChannelIntensities(Array(CHANNEL_COUNT).fill(0)); setSelected([])
+    onToast?.(r.ok===false ? (r.error||'오류') : '전체 꺼짐')
+  }
+  async function handleStoreCue() {
+    const nums = cueSaveName.split(/[\s,]+/).map(n=>n.trim()).filter(n=>/^\d+(\.\d+)?$/.test(n))
+    if (!nums.length) { onToast?.('유효한 큐 번호를 입력하세요'); return }
+    setSaving(true)
+    const failed = []
+    for (const n of nums) {
+      const r = await api.storeCue(n)
+      if (!r||r.ok===false) { failed.push(n); continue }
+      const ar = await api.addCue(n)
+      if (ar&&ar.ok===false&&ar.status!==409) failed.push(n)
+    }
+    setSaving(false)
+    if (failed.length) onToast?.(`큐 ${failed.join(', ')} 저장 실패`)
+    else { onToast?.(`큐 ${nums.join(', ')} 저장 완료`); onCueStored?.(); setCueSaveName('') }
+  }
+
+  // ── 포지션 프리셋 ─────────────────────────────────────────────────
+  async function savePositionPreset(name) {
+    const r = await api.savePositionPreset(name, pan, tilt, zoom)
+    if (r.ok && r.preset) setPosPresets(prev => [...prev, r.preset])
+    onToast?.(`포지션 프리셋 "${name}" 저장됨`)
+  }
+  async function applyPositionPreset(p) {
+    setPan(p.pan); setTilt(p.tilt); setZoom(p.zoom)
+    await applyPosition(p.pan, p.tilt, p.zoom)
+    onToast?.(`"${p.name}" 적용됨`)
+  }
+  async function deletePositionPreset(id) {
+    await api.deletePreset('position', id)
+    setPosPresets(prev => prev.filter(p => p.id !== id))
+  }
+
+  // ── 색상 프리셋 ──────────────────────────────────────────────────
+  async function saveColorPreset(name) {
+    const r = await api.saveColorPreset(name, color.h, color.s, color.v)
+    if (r.ok && r.preset) setColPresets(prev => [...prev, r.preset])
+    onToast?.(`색상 프리셋 "${name}" 저장됨`)
+  }
+  async function applyColorPreset(p) {
+    const c = { h: p.h, s: p.s, v: p.v }
+    setColor(c); await applyColor(c)
+    onToast?.(`"${p.name}" 적용됨`)
+  }
+  async function deleteColorPreset(id) {
+    await api.deletePreset('color', id)
+    setColPresets(prev => prev.filter(p => p.id !== id))
+  }
+
+  return (
+    <div className="col" style={{ overflowY: 'auto' }}>
+
+      {/* 채널 */}
+      <Section title="채널" meta={`${selected.length} / ${CHANNEL_COUNT} 선택됨`}>
+        <div className="channels">
+          {Array.from({length:CHANNEL_COUNT},(_,i)=>i+1).map(id => (
+            <div key={id} className={`ch-btn${selected.includes(id)?' active':''}`}
+              style={{'--val': channelIntensities[id-1]/100}} onClick={()=>toggleChannel(id)}>
+              <span className="ch-btn-num">{id}</span>
+              <span className="ch-btn-val">{channelIntensities[id-1]}</span>
+              <div className="ch-bar"/>
+            </div>
+          ))}
+        </div>
+        <div className="channel-actions">
+          <button className="btn sm ghost" onClick={selectAll}>전체 선택</button>
+          <button className="btn sm ghost" onClick={clearAll}>선택 해제</button>
+          <div className="grow"/>
+          <button className="btn sm danger" onClick={handleClear}>전체 끄기</button>
+        </div>
+      </Section>
+
+      {/* 밝기 */}
+      <Section title="밝기" meta={`${intensity}%`}>
+        <Slider value={intensity} onChange={setIntensity} onCommit={()=>applyIntensity(intensity)} hero />
+      </Section>
+
+      {/* 포지션 */}
+      <Section title="움직임 / 포커스">
+        {[['PAN',pan,setPan],['TILT',tilt,setTilt],['ZOOM',zoom,setZoom]].map(([label,value,set])=>(
+          <Slider key={label} label={label} showLabel value={value} onChange={set} onCommit={applyPosition}/>
         ))}
-        {fixtures.length > 0 ? (
-          <span style={s.fixtureStatus}>
-            {fixtures.join(', ')}번 선택됨
-          </span>
-        ) : (
-          <span style={s.noFixture}>선택 없음</span>
+      </Section>
+
+      {/* 포지션 프리셋 */}
+      <Section title="포지션 프리셋" defaultOpen={true}>
+        <PresetBank
+          presets={posPresets}
+          onApply={applyPositionPreset}
+          onSave={savePositionPreset}
+          onDelete={deletePositionPreset}
+          saveLabel="현재 저장"
+          getTip={p => `PAN ${p.pan} · TILT ${p.tilt} · ZOOM ${p.zoom}`}
+        />
+        {posPresets.length === 0 && (
+          <div style={{fontSize:11,color:'var(--text-dim)'}}>
+            PAN·TILT·ZOOM 맞추고 "현재 저장"으로 프리셋을 추가하세요
+          </div>
         )}
-        <div style={{ flex: 1 }} />
-        <button style={s.clearBtn} onClick={handleClearAll} disabled={sending}>
-          전체 끄기
-        </button>
-      </div>
-
-      {/* 밝기 슬라이더 */}
-      <div style={s.row}>
-        <span style={s.label}>밝기</span>
-        <div style={s.sliderWrap}>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={brightness}
-            style={s.slider}
-            onChange={(e) => setBrightness(Number(e.target.value))}
-            onMouseUp={handleBrightnessCommit}
-            onTouchEnd={handleBrightnessCommit}
-          />
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={brightness}
-            style={s.sliderVal}
-            onChange={(e) => {
-              const v = Math.min(100, Math.max(0, Number(e.target.value)))
-              setBrightness(v)
-            }}
-            onBlur={handleBrightnessCommit}
-            onKeyDown={(e) => e.key === 'Enter' && handleBrightnessCommit()}
-          />
-        </div>
-      </div>
-
-      {/* Pan */}
-      <div style={s.row}>
-        <span style={s.label}>Pan</span>
-        <div style={s.sliderWrap}>
-          <input type="range" min={0} max={100} value={pan} style={s.slider}
-            onChange={(e) => setPan(Number(e.target.value))}
-            onMouseUp={handlePositionCommit} onTouchEnd={handlePositionCommit} />
-          <input type="number" min={0} max={100} value={pan} style={s.sliderVal}
-            onChange={(e) => setPan(Math.min(100, Math.max(0, Number(e.target.value))))}
-            onBlur={handlePositionCommit}
-            onKeyDown={(e) => e.key === 'Enter' && handlePositionCommit()} />
-        </div>
-      </div>
-
-      {/* Tilt */}
-      <div style={s.row}>
-        <span style={s.label}>Tilt</span>
-        <div style={s.sliderWrap}>
-          <input type="range" min={0} max={100} value={tilt} style={s.slider}
-            onChange={(e) => setTilt(Number(e.target.value))}
-            onMouseUp={handlePositionCommit} onTouchEnd={handlePositionCommit} />
-          <input type="number" min={0} max={100} value={tilt} style={s.sliderVal}
-            onChange={(e) => setTilt(Math.min(100, Math.max(0, Number(e.target.value))))}
-            onBlur={handlePositionCommit}
-            onKeyDown={(e) => e.key === 'Enter' && handlePositionCommit()} />
-        </div>
-      </div>
-
-      {/* Zoom */}
-      <div style={s.row}>
-        <span style={s.label}>Zoom</span>
-        <div style={s.sliderWrap}>
-          <input type="range" min={0} max={100} value={focus} style={s.slider}
-            onChange={(e) => setFocus(Number(e.target.value))}
-            onMouseUp={handlePositionCommit} onTouchEnd={handlePositionCommit} />
-          <input type="number" min={0} max={100} value={focus} style={s.sliderVal}
-            onChange={(e) => setFocus(Math.min(100, Math.max(0, Number(e.target.value))))}
-            onBlur={handlePositionCommit}
-            onKeyDown={(e) => e.key === 'Enter' && handlePositionCommit()} />
-        </div>
-      </div>
+      </Section>
 
       {/* 색상 */}
-      <div style={{ paddingTop: 4 }}>
-        <div style={{ fontSize: 'var(--font-sm)', fontWeight: 700, color: '#7a7f9a', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
-          색상
-        </div>
-        <MAColorPicker
-          color={pickerColor}
-          bright={brightness}
-          q={qValue}
-          onChange={onColorChange}
-          onQChange={(v) => { setQValue(v); applyToFixtures(() => api.setQ(v)) }}
+      <Section title="색상" meta={rgbToHex(...hsvToRgb(color.h,color.s,color.v))}>
+        <ColorPicker color={color} onChange={c=>{setColor(c);applyColor(c)}}/>
+      </Section>
+
+      {/* 색상 프리셋 */}
+      <Section title="색상 프리셋" defaultOpen={true}>
+        <PresetBank
+          presets={colPresets}
+          onApply={applyColorPreset}
+          onSave={saveColorPreset}
+          onDelete={deleteColorPreset}
+          saveLabel="현재 색상 저장"
+          getTip={p => `${rgbToHex(...hsvToRgb(p.h, p.s, p.v))}  H${p.h} S${p.s} V${p.v}`}
         />
-      </div>
+        {colPresets.length === 0 && (
+          <div style={{fontSize:11,color:'var(--text-dim)'}}>
+            원하는 색상 설정 후 "현재 색상 저장"으로 추가하세요
+          </div>
+        )}
+      </Section>
 
       {/* 이펙트 */}
-      <div style={{ paddingTop: 4 }}>
-        <div style={{ fontSize: 'var(--font-sm)', fontWeight: 700, color: '#7a7f9a', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
-          이펙트
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          {[
-            { key: 'none', label: '없음' },
-            { key: 'strobe', label: '스트로브' },
-            { key: 'slot', label: 'Effect Slot' },
-          ].map(opt => (
-            <button
-              key={opt.key}
-              style={{
-                padding: '4px 12px',
-                borderRadius: 8,
-                border: `1px solid ${effectMode === opt.key ? '#f0a500' : '#2e334d'}`,
-                background: effectMode === opt.key ? '#2a2000' : '#22263a',
-                color: effectMode === opt.key ? '#f0a500' : '#7a7f9a',
-                fontSize: 'var(--font-sm)',
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-              onClick={() => {
-                setEffectMode(opt.key)
-                handleEffectApply(opt.key, strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)
-              }}
-            >
-              {opt.label}
+      <Section title="이펙트">
+        <div className="segmented">
+          {[['none','없음'],['strobe','스트로브'],['slot','Effect Slot']].map(([k,label])=>(
+            <button key={k} className={effect===k?'active':''} onClick={()=>{setEffect(k);applyEffect(k,strobeRate)}}>
+              {label}
             </button>
           ))}
         </div>
-        {effectMode === 'strobe' && (
-          <div style={s.row}>
-            <span style={{ ...s.label, minWidth: 48 }}>속도</span>
-            <div style={s.sliderWrap}>
-              <input
-                type="range" min={0} max={100} value={strobeVal} style={s.slider}
-                onChange={e => setStrobeVal(Number(e.target.value))}
-                onMouseUp={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                onTouchEnd={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-              />
-              <input
-                type="number" min={0} max={100} value={strobeVal} style={s.sliderVal}
-                onChange={e => setStrobeVal(Math.min(100, Math.max(0, Number(e.target.value))))}
-                onBlur={() => handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                onKeyDown={e => e.key === 'Enter' && handleEffectApply('strobe', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-              />
-            </div>
-          </div>
+        {effect==='strobe'&&(
+          <Slider label="RATE" showLabel value={strobeRate} min={1} max={20}
+            onChange={setStrobeRate} onCommit={()=>applyEffect('strobe',strobeRate)}/>
         )}
-        {effectMode === 'slot' && (
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ ...s.label, minWidth: 'unset' }}>Slot</span>
-              <input
-                type="number" min={1} max={99} value={effectSlot}
-                style={{ ...s.sliderVal, width: 60 }}
-                onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectSlot(Math.min(99, Math.max(1, n))) }}
-                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ ...s.label, minWidth: 'unset' }}>세기</span>
-              <input
-                type="number" min={0} max={100} value={effectSlotValue}
-                style={{ ...s.sliderVal, width: 60 }}
-                onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectSlotValue(Math.min(100, Math.max(0, n))) }}
-                onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-              />
-            </div>
-            {/* Tempo/High/Low */}
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ ...s.label, minWidth: 'unset', color: '#c4a0ff' }}>Tempo</span>
-                    <input
-                        type="number" min={0} max={100} value={effectTempo}
-                        style={{ ...s.sliderVal, width: 60 }}
-                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectTempo(Math.min(100, Math.max(0, n))) }}
-                        onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                        onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                    />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ ...s.label, minWidth: 'unset', color: '#3ddc84' }}>High</span>
-                    <input
-                        type="number" min={0} max={100} value={effectHigh}
-                        style={{ ...s.sliderVal, width: 60 }}
-                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectHigh(Math.min(100, Math.max(0, n))) }}
-                        onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                        onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                    />
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ ...s.label, minWidth: 'unset', color: '#6ab0f5' }}>Low</span>
-                    <input
-                        type="number" min={0} max={100} value={effectLow}
-                        style={{ ...s.sliderVal, width: 60 }}
-                        onChange={e => { const n = parseInt(e.target.value, 10); if (Number.isFinite(n)) setEffectLow(Math.min(100, Math.max(0, n))) }}
-                        onBlur={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                        onKeyDown={e => e.key === 'Enter' && handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-                    />
-                </div>
-            </div>
-            <button
-              style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid #f0a500', background: '#2a2000', color: '#f0a500', fontSize: 'var(--font-sm)', fontWeight: 700, cursor: 'pointer' }}
-              onClick={() => handleEffectApply('slot', strobeVal, effectSlot, effectSlotValue, effectTempo, effectHigh, effectLow)}
-            >
-              적용
-            </button>
-          </div>
-        )}
-      </div>
+      </Section>
 
       {/* 큐 저장 */}
-      <div style={s.row}>
-        <span style={s.label}>큐</span>
-        <input
-          style={s.cueInput}
-          type="text"
-          placeholder="1, 2, 3"
-          value={cueNum}
-          onChange={e => setCueNum(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleStoreCue()}
-        />
-        <button
-          style={s.cueBtn(!cueNum.trim() || sending)}
-          onClick={handleStoreCue}
-          disabled={!cueNum.trim() || sending}
-        >
-          큐 저장
-        </button>
-      </div>
+      <Section title="큐 저장">
+        <div className="row">
+          <input className="input" value={cueSaveName} onChange={e=>setCueSaveName(e.target.value)}
+            placeholder="1, 2, 3" onKeyDown={e=>e.key==='Enter'&&handleStoreCue()} style={{flex:1}}/>
+          <button className="btn primary" onClick={handleStoreCue}
+            disabled={!cueSaveName.trim()||saving} style={{flexShrink:0}}>
+            <Save size={13}/> {saving?'저장 중…':'저장'}
+          </button>
+        </div>
+        <div style={{fontSize:11,color:'var(--text-dim)'}}>쉼표로 구분해 여러 큐를 한 번에 저장</div>
+      </Section>
+
     </div>
   )
 }
