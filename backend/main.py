@@ -44,11 +44,14 @@ try:
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_preview_color,
+        cmd_preview_position,
         cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_strobe,
         cmd_tilt,
+        cmd_update_cue,
     )
     from .excel_importer import (
         parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
@@ -79,11 +82,14 @@ except ImportError:
         cmd_intensity,
         cmd_off_fixtures,
         cmd_pan,
+        cmd_preview_color,
+        cmd_preview_position,
         cmd_q,
         cmd_select_fixtures,
         cmd_store_cue,
         cmd_strobe,
         cmd_tilt,
+        cmd_update_cue,
     )
     from telnet_client import MA2_DEFAULT_PORT, ma2_client
 
@@ -108,6 +114,8 @@ _cues_lock = asyncio.Lock()
 
 _GROUP_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
+_preview_snapshot_lock = asyncio.Lock()
+
 
 from dataclasses import dataclass, field as dc_field
 
@@ -119,6 +127,9 @@ class CueSession:
     completed: bool = False
 
 _cue_sessions: dict = {}
+
+# Stores pre-edit color/position snapshot keyed by fixture number (str) for preview restore.
+_preview_snapshot: dict = {}
 
 
 def _read_groups() -> dict:
@@ -670,6 +681,204 @@ async def apply_cue_session(session_id: str, req: ApplySessionRequest = None):
         "errors": errors,
         "results": results,
     }
+
+
+class ColorModel(BaseModel):
+    r: int = Field(ge=0, le=100)
+    g: int = Field(ge=0, le=100)
+    b: int = Field(ge=0, le=100)
+
+
+class PositionModel(BaseModel):
+    pan: Optional[int] = Field(default=None, ge=0, le=100)
+    tilt: Optional[int] = Field(default=None, ge=0, le=100)
+    focus: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+class BulkEditRequest(BaseModel):
+    cue_numbers: List[str]
+    fixture_numbers: List[int] = Field(min_length=1)
+    color: Optional[ColorModel] = None
+    position: Optional[PositionModel] = None
+
+
+class PreviewColorRequest(BaseModel):
+    fixture_numbers: List[int]
+    color: ColorModel
+
+
+class PreviewPositionRequest(BaseModel):
+    fixture_numbers: List[int]
+    pan: Optional[int] = Field(default=None, ge=0, le=100)
+    tilt: Optional[int] = Field(default=None, ge=0, le=100)
+    focus: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+class PreviewSnapshotRequest(BaseModel):
+    cue_numbers: List[str]
+    fixture_numbers: List[int]
+
+
+@app.post("/api/cues/bulk-edit")
+async def bulk_edit_cues(req: BulkEditRequest):
+    if not req.cue_numbers:
+        raise HTTPException(status_code=400, detail="cue_numbers가 비어 있습니다.")
+    if not req.fixture_numbers:
+        raise HTTPException(status_code=400, detail="fixture_numbers가 비어 있습니다.")
+    if not req.color and not req.position:
+        raise HTTPException(status_code=400, detail="color 또는 position 중 하나는 필요합니다.")
+
+    # Validate all cue numbers exist in cues.json
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+    existing_nums = {c["number"] for c in cues}
+    invalid = [n for n in req.cue_numbers if n not in existing_nums]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"존재하지 않는 큐 번호: {invalid}")
+
+    updated, failed = [], []
+    for cue_num in req.cue_numbers:
+        try:
+            await send_and_log(cmd_goto_cue(cue_num))
+            if req.color:
+                cmds = cmd_preview_color(
+                    req.fixture_numbers,
+                    req.color.r,
+                    req.color.g,
+                    req.color.b,
+                )
+                for c in cmds:
+                    await send_and_log(c)
+            if req.position:
+                cmds = cmd_preview_position(
+                    req.fixture_numbers,
+                    pan=req.position.pan,
+                    tilt=req.position.tilt,
+                    focus=req.position.focus,
+                )
+                for c in cmds:
+                    await send_and_log(c)
+            await send_and_log(cmd_update_cue(cue_num))
+            await asyncio.sleep(0.1)
+            updated.append(cue_num)
+        except Exception as exc:
+            logger.warning(f"[bulk-edit] 큐 {cue_num} 실패: {exc}")
+            failed.append({"cue": cue_num, "error": str(exc)})
+
+    await send_and_log(cmd_clear_all())
+
+    # Persist color/position meta to cues.json
+    async with _cues_lock:
+        cues, _ = _read_cues()
+        for c in cues:
+            if c["number"] in updated:
+                if req.color:
+                    c["color"] = req.color.model_dump()
+                if req.position:
+                    c["position"] = req.position.model_dump(exclude_none=True)
+        _write_cues(cues)
+        refreshed = cues
+
+    return {"ok": len(failed) == 0, "updated": updated, "failed": failed, "cues": refreshed}
+
+
+@app.post("/api/preview/snapshot")
+async def preview_snapshot(req: PreviewSnapshotRequest):
+    global _preview_snapshot
+    async with _cues_lock:
+        cues, _ = _read_cues()
+    cue_map = {c["number"]: c for c in cues}
+    snapshot: dict = {}
+    for num in req.cue_numbers:
+        cue = cue_map.get(num, {})
+        snapshot[num] = {
+            "color": cue.get("color"),
+            "position": cue.get("position"),
+        }
+    async with _preview_snapshot_lock:
+        _preview_snapshot = {"cue_numbers": req.cue_numbers, "fixture_numbers": req.fixture_numbers, "data": snapshot}
+    return {"ok": True, "snapshot": _preview_snapshot}
+
+
+@app.post("/api/preview/color")
+async def preview_color(req: PreviewColorRequest):
+    cmds = cmd_preview_color(
+        req.fixture_numbers,
+        req.color.r,
+        req.color.g,
+        req.color.b,
+    )
+    results = await send_commands(cmds, delay=0.02)
+    return summarize_results(results)
+
+
+@app.post("/api/preview/position")
+async def preview_position(req: PreviewPositionRequest):
+    cmds = cmd_preview_position(
+        req.fixture_numbers,
+        pan=req.pan,
+        tilt=req.tilt,
+        focus=req.focus,
+    )
+    results = await send_commands(cmds, delay=0.02)
+    return summarize_results(results)
+
+
+@app.post("/api/preview/restore")
+async def preview_restore():
+    global _preview_snapshot
+    async with _preview_snapshot_lock:
+        if not _preview_snapshot:
+            # No snapshot — fall back to ClearAll
+            result = await send_and_log(cmd_clear_all())
+            return {"ok": result.get("ok", False), "restored": False}
+
+        fixture_numbers = _preview_snapshot.get("fixture_numbers", [])
+        data = _preview_snapshot.get("data", {})
+        snapshot_copy = dict(data)
+        _preview_snapshot = {}
+
+    # Send restore commands outside the lock to avoid blocking other snapshot requests.
+    # Only send commands for cues that have stored color/position values.
+    for cue_num, vals in snapshot_copy.items():
+        color = vals.get("color")
+        position = vals.get("position")
+        if not color and not position:
+            # No stored state for this cue — skip entirely
+            continue
+        if color and fixture_numbers:
+            cmds = cmd_preview_color(
+                fixture_numbers,
+                int(color.get("r", 0)),
+                int(color.get("g", 0)),
+                int(color.get("b", 0)),
+            )
+            for c in cmds:
+                await send_and_log(c)
+        if position and fixture_numbers:
+            cmds = cmd_preview_position(
+                fixture_numbers,
+                pan=position.get("pan"),
+                tilt=position.get("tilt"),
+                focus=position.get("focus"),
+            )
+            for c in cmds:
+                await send_and_log(c)
+
+    # Clean programmer state after all restore commands
+    await send_and_log(cmd_clear_all())
+    return {"ok": True, "restored": True}
+
+
+@app.post("/api/preview/release")
+async def preview_release():
+    global _preview_snapshot
+    async with _preview_snapshot_lock:
+        _preview_snapshot = {}
+    result = await send_and_log(cmd_clear_all())
+    return {"ok": result.get("ok", False)}
 
 
 @app.delete("/api/cues/{cue_number}")

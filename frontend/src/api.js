@@ -79,4 +79,14 @@ export const api = {
   importTemplateUrl: () => BASE + '/cues/import-template',
   completeCueChat: (sessionId, message) => post(`/cues/complete/${sessionId}`, { message }),
   applyCueSession: (sessionId, onError = 'skip') => post(`/cues/complete/${sessionId}/apply`, { on_error: onError }),
+  bulkEditCues: (cue_numbers, fixture_numbers, color, position) =>
+    post('/cues/bulk-edit', { cue_numbers, fixture_numbers, color, position }),
+  previewSnapshot: (cue_numbers, fixture_numbers) =>
+    post('/preview/snapshot', { cue_numbers, fixture_numbers }),
+  previewColor: (fixture_numbers, color) =>
+    post('/preview/color', { fixture_numbers, color }),
+  previewPosition: (fixture_numbers, pan, tilt, focus) =>
+    post('/preview/position', { fixture_numbers, pan, tilt, focus }),
+  previewRestore: () => post('/preview/restore', {}),
+  previewRelease: () => post('/preview/release', {}),
 }

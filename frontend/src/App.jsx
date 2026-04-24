@@ -9,6 +9,7 @@ import Step3Position from './components/Step3Position'
 import Step3Effect from './components/Step3Effect'
 import Step4StoreCue from './components/Step4StoreCue'
 import ImportCuePanel from './components/ImportCuePanel'
+import BulkEditModal from './components/BulkEditModal'
 import { api } from './api'
 
 const AUTO = { host: '127.0.0.1', port: 30000, user: 'administrator', password: 'admin' }
@@ -39,6 +40,7 @@ export default function App() {
 
   const [selectedFixtures, setSelectedFixtures] = useState([])
   const [cueRefreshKey, setCueRefreshKey] = useState(0)
+  const [bulkEditCueNumbers, setBulkEditCueNumbers] = useState(null)
   const [wizardMode, setWizardMode] = useState(false)
   const [importMode, setImportMode] = useState(false)
   const [wizardStep, setWizardStep] = useState(1)
@@ -187,12 +189,19 @@ export default function App() {
                 엑셀 가져오기
               </button>
             </div>
-            <CuePanel refreshKey={cueRefreshKey} />
+            <CuePanel refreshKey={cueRefreshKey} onBulkEdit={setBulkEditCueNumbers} />
             <AIChat connected={connected} />
           </>
         )}
       </div>
 
+      {bulkEditCueNumbers && (
+        <BulkEditModal
+          cueNumbers={bulkEditCueNumbers}
+          onClose={() => setBulkEditCueNumbers(null)}
+          onSaved={() => { setBulkEditCueNumbers(null); setCueRefreshKey(k => k + 1) }}
+        />
+      )}
     </div>
   )
 }

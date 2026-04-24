@@ -114,12 +114,13 @@ const s = {
   },
 }
 
-export default function CuePanel({ refreshKey }) {
+export default function CuePanel({ refreshKey, onBulkEdit }) {
   const [cues, setCues] = useState([])
   const [currentCue, setCurrentCue] = useState(null)
   const [fadeTimes, setFadeTimes] = useState({})
   const [sending, setSending] = useState(false)
   const [error, setError] = useState(null)
+  const [selectedCues, setSelectedCues] = useState(new Set())
 
   async function loadCues() {
     const r = await api.getCues()
@@ -144,6 +145,15 @@ export default function CuePanel({ refreshKey }) {
     } finally {
       setSending(false)
     }
+  }
+
+  function toggleSelectCue(num) {
+    setSelectedCues(prev => {
+      const next = new Set(prev)
+      if (next.has(num)) next.delete(num)
+      else next.add(num)
+      return next
+    })
   }
 
   async function handleDelete(num) {
@@ -172,18 +182,48 @@ export default function CuePanel({ refreshKey }) {
   return (
     <div style={s.panel}>
       {error && <div style={s.toast}>{error}</div>}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 12 }}>
-        <span style={s.title}>큐 시퀀스</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ ...s.colHeader, width: 52 }}>페이드</span>
-        <span style={{ ...s.colHeader, width: 52 }}>실행</span>
-        <span style={{ ...s.colHeader, width: 36 }}>제거</span>
-      </div>
+
+      {selectedCues.size > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', background: '#1a2540', borderRadius: 8, border: '1px solid #2e5599' }}>
+          <span style={{ fontSize: 'var(--font-sm)', color: '#7ab3f0', fontWeight: 600 }}>
+            {selectedCues.size}개 선택됨
+          </span>
+          <div style={{ flex: 1 }} />
+          <button
+            className="btn btn-primary"
+            style={{ fontSize: 12, padding: '4px 14px' }}
+            onClick={() => onBulkEdit && onBulkEdit(Array.from(selectedCues))}
+          >
+            일괄 편집
+          </button>
+          <button
+            className="btn btn-secondary"
+            style={{ fontSize: 12, padding: '4px 10px' }}
+            onClick={() => setSelectedCues(new Set())}
+          >
+            선택 해제
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 12 }}>
+          <span style={s.title}>큐 시퀀스</span>
+          <div style={{ flex: 1 }} />
+          <span style={{ ...s.colHeader, width: 52 }}>페이드</span>
+          <span style={{ ...s.colHeader, width: 52 }}>실행</span>
+          <span style={{ ...s.colHeader, width: 36 }}>제거</span>
+        </div>
+      )}
 
       <div style={s.cueList}>
         {cues.length === 0 && <div style={s.empty}>큐가 없습니다.</div>}
         {cues.map(cue => (
           <div key={cue.number} style={s.cueRow(currentCue === cue.number)}>
+            <input
+              type="checkbox"
+              checked={selectedCues.has(cue.number)}
+              onChange={() => toggleSelectCue(cue.number)}
+              style={{ flexShrink: 0, width: 16, height: 16, cursor: 'pointer', accentColor: '#5599f0' }}
+            />
             <span style={s.cueNum(currentCue === cue.number)}>
               Cue {cue.number}
               {cue.label && <span style={{ color: '#7a7f9a', fontSize: '0.8em', marginLeft: 6 }}>{cue.label}</span>}

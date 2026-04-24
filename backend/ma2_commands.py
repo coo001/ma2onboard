@@ -135,3 +135,30 @@ def cmd_effect_low(value: int) -> str:
     """Effect low boundary. 0..100."""
     value = max(0, min(100, value))
     return f'Attribute "EffLow" At {value}'
+
+
+def cmd_update_cue(cue_number: str) -> str:
+    return f"Update Cue {_validate_cue_number(cue_number)}"
+
+
+def cmd_preview_color(fixture_numbers: List[int], r: int, g: int, b: int) -> List[str]:
+    r, g, b = (max(0, min(100, v)) for v in (r, g, b))
+    fixtures = " + ".join(str(n) for n in fixture_numbers)
+    return [
+        f"Fixture {fixtures}",
+        f'Attribute "ColorRGB1" At {r}',
+        f'Attribute "ColorRGB2" At {g}',
+        f'Attribute "ColorRGB3" At {b}',
+    ]
+
+
+def cmd_preview_position(fixture_numbers: List[int], pan=None, tilt=None, focus=None) -> List[str]:
+    fixtures = " + ".join(str(n) for n in fixture_numbers)
+    cmds = [f"Fixture {fixtures}"]
+    if pan is not None:
+        cmds.append(f'Attribute "Pan" At {max(0, min(100, pan))}')
+    if tilt is not None:
+        cmds.append(f'Attribute "Tilt" At {max(0, min(100, tilt))}')
+    if focus is not None:
+        cmds.append(f'Attribute "Zoom" At {max(0, min(100, focus))}')
+    return cmds
