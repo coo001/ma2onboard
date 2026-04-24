@@ -148,6 +148,25 @@ def _validate_row(col_map: dict, row_values: dict, row_index: int) -> dict:
     }
 
 
+def is_template_format(file_bytes: bytes) -> bool:
+    """첫 번째 비어있지 않은 행에 'cue'와 'fixtures' 컬럼이 모두 있으면 템플릿 포맷으로 판단."""
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+        ws = wb.active
+        first_nonempty = None
+        for row in ws.iter_rows(values_only=True):
+            if any(c is not None for c in row):
+                first_nonempty = row
+                break
+        wb.close()
+    except Exception:
+        return False
+    if not first_nonempty:
+        return False
+    normalized = [_normalize_header(str(c)) for c in first_nonempty if c is not None]
+    return "cue" in normalized and "fixtures" in normalized
+
+
 def parse_workbook(file_bytes: bytes) -> tuple:
     """Returns (rows, errors). rows = validated, errors = [{row_index, column, message}]."""
     try:
@@ -232,6 +251,103 @@ def build_commands(row: dict) -> list:
                 cmds.append(cmd_effect_rate(eff["rate"]))
     else:
         cmds.append(cmd_effect_off())
+    cmds.append(cmd_store_cue(row["cue"]))
+    return cmds
+
+
+def extract_sheet_text(file_bytes: bytes, max_rows: int = 50, max_cols: int = 30) -> str:
+    """엑셀 시트를 AI에게 전달할 텍스트 표현으로 변환. 빈 행 제거, 최대 50행×30열."""
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+    try:
+        ws = wb.active
+        lines = []
+        for i, row in enumerate(ws.iter_rows(values_only=True)):
+            row_vals = list(row)[:max_cols]
+            if all(v is None or str(v).strip() == "" for v in row_vals):
+                continue
+            cells = [str(v) if v is not None else "" for v in row_vals]
+            lines.append(f"행{i+1}: [{', '.join(cells)}]")
+            if len(lines) >= max_rows:
+                break
+    finally:
+        wb.close()
+    return "\n".join(lines)
+
+
+def normalize_ai_rows(ai_rows: list) -> list:
+    """AI가 반환한 큐 목록을 검증하고 큐 번호를 정리."""
+    result = []
+    seen_cues = set()
+    for idx, row in enumerate(ai_rows, start=1):
+        cue = str(row.get("cue") or idx).strip()
+        # 소수점 .0 제거
+        if re.match(r"^\d+\.0$", cue):
+            cue = cue[:-2]
+        # 유효하지 않은 큐 번호면 순서 기반 부여
+        if not CUE_NUMBER_RE.match(cue):
+            cue = str(idx)
+        # 중복 큐 번호 처리: 정수 부분에 suffix를 붙여 유효한 번호 생성
+        if cue in seen_cues:
+            base = cue.split(".")[0]
+            suffix = 1
+            cue = f"{base}.{suffix}"
+            while cue in seen_cues:
+                suffix += 1
+                cue = f"{base}.{suffix}"
+        seen_cues.add(cue)
+        result.append({**row, "cue": cue})
+    return result
+
+
+def build_commands_from_ai(row: dict) -> list:
+    """AI 파싱 결과(intensity_per_fixture 포함 가능)를 MA2 명령어 리스트로 변환."""
+    try:
+        from .ma2_commands import (
+            cmd_select_fixtures, cmd_intensity, cmd_color_rgb,
+            cmd_pan, cmd_tilt, cmd_focus, cmd_store_cue, cmd_clear_all,
+        )
+    except ImportError:
+        from ma2_commands import (
+            cmd_select_fixtures, cmd_intensity, cmd_color_rgb,
+            cmd_pan, cmd_tilt, cmd_focus, cmd_store_cue, cmd_clear_all,
+        )
+
+    cmds = [cmd_clear_all()]
+    per_fixture: dict = row.get("intensity_per_fixture") or {}
+
+    if per_fixture:
+        # 같은 밝기값을 가진 fixture들을 그룹핑하여 명령어 생성
+        groups: dict = {}
+        for fixture_str, intensity_val in per_fixture.items():
+            try:
+                fixture_num = int(fixture_str)
+                if intensity_val is None or intensity_val == "":
+                    continue
+                intensity_int = int(float(intensity_val))
+            except (ValueError, TypeError):
+                continue
+            groups.setdefault(intensity_int, []).append(fixture_num)
+        for intensity_val, fixtures in sorted(groups.items(), reverse=True):
+            cmds.append(cmd_select_fixtures(sorted(fixtures)))
+            cmds.append(cmd_intensity(intensity_val))
+    else:
+        fixtures = row.get("fixtures") or []
+        if fixtures:
+            cmds.append(cmd_select_fixtures(fixtures))
+        if row.get("intensity") is not None:
+            cmds.append(cmd_intensity(int(row["intensity"])))
+
+    color = row.get("color")
+    if isinstance(color, dict) and all(k in color for k in ("r", "g", "b")):
+        cmds.extend(cmd_color_rgb(int(color["r"]), int(color["g"]), int(color["b"])))
+
+    if row.get("pan") is not None:
+        cmds.append(cmd_pan(int(row["pan"])))
+    if row.get("tilt") is not None:
+        cmds.append(cmd_tilt(int(row["tilt"])))
+    if row.get("focus") is not None:
+        cmds.append(cmd_focus(int(row["focus"])))
+
     cmds.append(cmd_store_cue(row["cue"]))
     return cmds
 

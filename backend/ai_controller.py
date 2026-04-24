@@ -156,3 +156,71 @@ async def parse_command(text: str) -> dict:
     )
 
     return json.loads(response.choices[0].message.content)
+
+
+async def parse_excel_sheet(rows_text: str) -> list:
+    """
+    엑셀 시트의 텍스트 표현을 받아 AI로 파싱하여 큐 목록 JSON을 반환한다.
+    rows_text: "행N: [값1, 값2, ...]" 형식의 문자열
+    반환: 큐 딕셔너리 리스트
+    """
+    system_prompt = """당신은 공연 조명 큐시트 엑셀 파일 구조 분석 전문가입니다.
+주어진 엑셀 시트 내용을 분석하여 각 행이 어떤 grandMA2 큐를 나타내는지 파악하고
+JSON 배열로 변환하세요.
+
+출력 JSON 스키마 (배열):
+[
+  {
+    "row_index": 4,
+    "cue": "1",
+    "label": "오프닝",
+    "fixtures": [1, 2, 3],
+    "intensity_per_fixture": {"1": 80, "2": 60, "3": 0},
+    "intensity": null,
+    "color": null,
+    "pan": null,
+    "tilt": null,
+    "fade": 2.0
+  }
+]
+
+파싱 규칙:
+- 헤더 행: 빈 행, 그룹 레이블 행을 건너뛰고 실제 컬럼명이 있는 행을 헤더로 식별
+- 큐 번호: "큐", "cue", "Q", "번호" 등으로 표기된 컬럼에서 추출. 없으면 데이터 행 순서를 1부터 자동 부여
+- 레이블: 장면명, 이름, label 등의 컬럼에서 추출
+- 조명별 밝기가 열로 펼쳐진 경우(헤더에 숫자나 "조명N"): intensity_per_fixture에 {fixture번호: 밝기값} 형태로 매핑. 빈 셀은 0으로 처리
+- 단일 fixtures 컬럼이 있으면 fixtures 배열과 intensity 단일값 사용
+- 페이드: "페이드", "fade", "Fade" 컬럼 → fade 필드 (float, 없으면 null)
+- 데이터가 없는 행(모든 셀 빈값)은 건너뜀
+- 큐 번호는 반드시 문자열 형태의 숫자 (예: "1", "1.5")로 반환
+- color는 {r, g, b} 딕셔너리 또는 null
+- 반드시 JSON 배열만 반환하고 다른 텍스트는 포함하지 마세요"""
+
+    user_msg = f"다음 엑셀 시트 내용을 분석해 큐 목록 JSON으로 변환해주세요:\n\n{rows_text}"
+
+    for attempt in range(2):
+        try:
+            resp = await _client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0,
+                response_format={"type": "json_object"},
+            )
+            content = resp.choices[0].message.content
+            parsed = json.loads(content)
+            # JSON 객체로 감싸진 경우 배열 추출
+            if isinstance(parsed, dict):
+                for v in parsed.values():
+                    if isinstance(v, list):
+                        return v
+                raise RuntimeError("AI 응답에서 큐 목록을 찾을 수 없습니다.")
+            if isinstance(parsed, list):
+                return parsed
+            raise RuntimeError("AI 응답이 예상 형식이 아닙니다.")
+        except Exception as e:
+            if attempt == 1:
+                raise RuntimeError(f"AI 엑셀 파싱 실패: {e}")
+    return []

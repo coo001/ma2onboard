@@ -107,9 +107,9 @@ export default function ImportCuePanel({ onClose, onImported }) {
 
       <div style={s.guide}>
         <div style={s.guideTitle}>사용 방법</div>
-        .xlsx 파일을 업로드하면 각 행을 grandMA2 큐로 저장합니다.<br />
-        필수 컬럼: <strong>cue(큐번호), fixtures(조명)</strong> — 나머지는 선택<br />
-        조명 표기: <code>1,2,5-7</code> 형식 / 밝기·색상·Pan·Tilt: 0~100 범위<br />
+        어떤 포맷의 큐시트든 자동으로 인식합니다<br />
+        .xlsx 파일을 업로드하면 AI가 구조를 분석해 grandMA2 큐로 저장합니다.<br />
+        템플릿 포맷(cue·fixtures 컬럼)은 즉시 파싱되고, 그 외 포맷은 AI가 자동 분석합니다.<br />
         <a
           href={api.importTemplateUrl()}
           download="cues_template.xlsx"
@@ -160,7 +160,7 @@ export default function ImportCuePanel({ onClose, onImported }) {
             onClick={handlePreview}
             disabled={loading || !file}
           >
-            {loading ? '처리 중...' : '검증 (미리보기)'}
+            {loading ? '처리 중... (AI 분석 중일 수 있습니다)' : '검증 (미리보기)'}
           </button>
           <button
             className="btn btn-primary"
@@ -182,6 +182,9 @@ export default function ImportCuePanel({ onClose, onImported }) {
             전체 {response.total_rows}행 중 유효 {response.valid_rows}행
             {response.errors?.length > 0 && ` / 오류 ${response.errors.length}행`}
             {!response.dry_run && ` / 성공 ${response.results?.filter(r => r.ok).length ?? 0}건`}
+            {response.parser === 'ai' && (
+              <span style={{fontSize:'11px', color:'#888', marginLeft:8}}>[AI 파싱]</span>
+            )}
           </div>
 
           {/* 검증 오류 */}

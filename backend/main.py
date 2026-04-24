@@ -50,10 +50,16 @@ try:
         cmd_strobe,
         cmd_tilt,
     )
-    from .excel_importer import parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError
+    from .excel_importer import (
+        parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
+        is_template_format, extract_sheet_text, normalize_ai_rows, build_commands_from_ai,
+    )
     from .telnet_client import MA2_DEFAULT_PORT, ma2_client
 except ImportError:
-    from excel_importer import parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError
+    from excel_importer import (
+        parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
+        is_template_format, extract_sheet_text, normalize_ai_rows, build_commands_from_ai,
+    )
     from ma2_commands import (
         COLOR_PRESETS,
         cmd_clear_all,
@@ -80,9 +86,9 @@ except ImportError:
     from telnet_client import MA2_DEFAULT_PORT, ma2_client
 
 try:
-    from .ai_controller import parse_command as ai_parse, update_states as ai_update
+    from .ai_controller import parse_command as ai_parse, update_states as ai_update, parse_excel_sheet
 except ImportError:
-    from ai_controller import parse_command as ai_parse, update_states as ai_update
+    from ai_controller import parse_command as ai_parse, update_states as ai_update, parse_excel_sheet
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -408,13 +414,38 @@ async def import_cues_excel(
         raise HTTPException(status_code=400, detail=".xlsx 파일만 지원합니다.")
 
     content = await file.read()
-    try:
-        rows, errors = parse_workbook(content)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
+    # 포맷 자동 감지 및 파싱
+    parser_type = "template"
+    if is_template_format(content):
+        try:
+            rows, errors = parse_workbook(content)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    else:
+        # AI 파싱 경로
+        parser_type = "ai"
+        try:
+            sheet_text = extract_sheet_text(content)
+            ai_rows = await parse_excel_sheet(sheet_text)
+            if not ai_rows:
+                raise HTTPException(status_code=400, detail="AI가 큐 데이터를 인식하지 못했습니다. 파일을 확인해 주세요.")
+            rows = normalize_ai_rows(ai_rows)
+            errors = []  # AI 파싱은 행 단위 에러 없이 전체 성공/실패
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"AI 파싱에 실패했습니다: {e}")
+
+    cmd_builder = build_commands_from_ai if parser_type == "ai" else excel_build_commands
+    valid_rows = []
     for r in rows:
-        r["commands"] = excel_build_commands(r)
+        try:
+            r["commands"] = cmd_builder(r)
+            valid_rows.append(r)
+        except ValueError as e:
+            errors.append({"row_index": r.get("row_index", "?"), "column": "cue", "message": str(e)})
+    rows = valid_rows
 
     total_rows = len(rows) + len(errors)
     valid_rows = len(rows)
@@ -431,6 +462,7 @@ async def import_cues_excel(
         return {
             "ok": len(errors) == 0,
             "dry_run": True,
+            "parser": parser_type,
             "total_rows": total_rows,
             "valid_rows": valid_rows,
             "errors": errors,
@@ -484,6 +516,7 @@ async def import_cues_excel(
     return {
         "ok": len(succeeded) > 0 and not errors,
         "dry_run": False,
+        "parser": parser_type,
         "total_rows": total_rows,
         "valid_rows": valid_rows,
         "errors": errors,
