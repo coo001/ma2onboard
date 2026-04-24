@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { api } from '../api'
 
 const s = {
@@ -45,6 +45,31 @@ const s = {
   cmdToggle: { color: '#7a7f9a', fontSize: 11, cursor: 'pointer', textDecoration: 'underline', marginTop: 2 },
   cmdList: { color: '#5a8f7a', fontSize: 11, fontFamily: 'monospace', marginTop: 4, lineHeight: 1.6 },
   err: { color: '#f26b6b', fontSize: 13, marginTop: 8 },
+  chatWrap: {
+    background: '#111520', border: '1px solid #3ddc8455', borderRadius: 14,
+    padding: '20px 24px', marginBottom: 16,
+  },
+  chatTitle: { fontSize: 15, fontWeight: 800, color: '#3ddc84', marginBottom: 4 },
+  chatSub: { fontSize: 12, color: '#7a7f9a', marginBottom: 14 },
+  chatLog: {
+    maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14,
+  },
+  chatBubble: (role) => ({
+    alignSelf: role === 'user' ? 'flex-end' : 'flex-start',
+    background: role === 'user' ? '#1e3a2a' : '#1e2035',
+    border: `1px solid ${role === 'user' ? '#3ddc8440' : '#3a3f5c'}`,
+    borderRadius: 10, padding: '8px 14px', maxWidth: '80%',
+    color: role === 'user' ? '#a0f0c0' : '#c8cce0', fontSize: 13, lineHeight: 1.6,
+  }),
+  chatInputRow: { display: 'flex', gap: 8 },
+  chatInput: {
+    flex: 1, background: '#1a1d27', border: '1px solid #3a3f5c', borderRadius: 8,
+    color: '#e8eaf0', padding: '8px 12px', fontSize: 13, outline: 'none',
+  },
+  resolvedBanner: {
+    background: '#0d2a1a', border: '1px solid #3ddc84', borderRadius: 10,
+    padding: '12px 16px', color: '#3ddc84', fontWeight: 700, fontSize: 13, marginBottom: 12,
+  },
 }
 
 export default function ImportCuePanel({ onClose, onImported }) {
@@ -54,7 +79,21 @@ export default function ImportCuePanel({ onClose, onImported }) {
   const [loading, setLoading] = useState(false)
   const [response, setResponse] = useState(null)
   const [expandedRows, setExpandedRows] = useState(new Set())
+
+  const [chatSession, setChatSession] = useState(null)
+  const [chatMessages, setChatMessages] = useState([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatResolved, setChatResolved] = useState(false)
+  const [chatLoading, setChatLoading] = useState(false)
+
   const fileInputRef = useRef(null)
+  const chatLogRef = useRef(null)
+
+  useEffect(() => {
+    if (chatLogRef.current) {
+      chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight
+    }
+  }, [chatMessages])
 
   function handleFile(f) {
     if (!f) return
@@ -65,6 +104,9 @@ export default function ImportCuePanel({ onClose, onImported }) {
     setFile(f)
     setResponse(null)
     setExpandedRows(new Set())
+    setChatSession(null)
+    setChatMessages([])
+    setChatResolved(false)
   }
 
   function toggleExpand(idx) {
@@ -80,7 +122,14 @@ export default function ImportCuePanel({ onClose, onImported }) {
     setLoading(true)
     const r = await api.importCuesExcel(file, true, onError)
     setLoading(false)
-    setResponse(r)
+    if (r.session_id) {
+      setChatSession({ sessionId: r.session_id, issuesCount: r.issues_count })
+      setChatMessages(r.question ? [{ role: 'assistant', text: r.question }] : [])
+      setChatResolved(false)
+      setResponse(null)
+    } else {
+      setResponse(r)
+    }
   }
 
   async function handleExecute() {
@@ -88,10 +137,47 @@ export default function ImportCuePanel({ onClose, onImported }) {
     setLoading(true)
     const r = await api.importCuesExcel(file, false, onError)
     setLoading(false)
-    setResponse(r)
-    if (r.ok || (r.results && r.results.some(x => x.ok))) {
-      onImported()
+    if (r.session_id) {
+      setChatSession({ sessionId: r.session_id, issuesCount: r.issues_count })
+      setChatMessages(r.question ? [{ role: 'assistant', text: r.question }] : [])
+      setChatResolved(false)
+      setResponse(null)
+    } else {
+      setResponse(r)
+      if (r.ok || (r.results && r.results.some(x => x.ok))) onImported()
     }
+  }
+
+  async function handleChatSend() {
+    if (!chatInput.trim() || chatLoading || !chatSession) return
+    const msg = chatInput.trim()
+    setChatInput('')
+    setChatMessages(prev => [...prev, { role: 'user', text: msg }])
+    setChatLoading(true)
+    const r = await api.completeCueChat(chatSession.sessionId, msg)
+    setChatLoading(false)
+    if (r.ok === false) {
+      setChatMessages(prev => [...prev, { role: 'assistant', text: `오류: ${r.error || '처리 실패'}` }])
+      return
+    }
+    if (r.next_question) {
+      setChatMessages(prev => [...prev, { role: 'assistant', text: r.next_question }])
+    }
+    if (r.all_resolved) {
+      setChatResolved(true)
+    }
+  }
+
+  async function handleApplySession() {
+    if (!chatSession) return
+    setLoading(true)
+    const r = await api.applyCueSession(chatSession.sessionId, onError)
+    setLoading(false)
+    setChatSession(null)
+    setChatMessages([])
+    setChatResolved(false)
+    setResponse(r)
+    if (r.ok || (r.results && r.results.some(x => x.ok))) onImported()
   }
 
   const canExecute = !loading && file && response && response.dry_run === true && (!response.errors || response.errors.length === 0)
@@ -143,36 +229,95 @@ export default function ImportCuePanel({ onClose, onImported }) {
       </div>
 
       {/* 옵션 */}
-      <div style={s.section}>
-        <div style={s.sectionTitle}>옵션</div>
-        <div style={s.optionRow}>
-          <label style={s.label}>
-            오류 처리:
-            <select style={s.select} value={onError} onChange={e => setOnError(e.target.value)}>
-              <option value="skip">오류 행 건너뛰기</option>
-              <option value="abort">첫 오류에서 중단</option>
-            </select>
-          </label>
+      {!chatSession && (
+        <div style={s.section}>
+          <div style={s.sectionTitle}>옵션</div>
+          <div style={s.optionRow}>
+            <label style={s.label}>
+              오류 처리:
+              <select style={s.select} value={onError} onChange={e => setOnError(e.target.value)}>
+                <option value="skip">오류 행 건너뛰기</option>
+                <option value="abort">첫 오류에서 중단</option>
+              </select>
+            </label>
+          </div>
+          <div style={s.btnRow}>
+            <button
+              className="btn btn-secondary"
+              onClick={handlePreview}
+              disabled={loading || !file}
+            >
+              {loading ? '처리 중... (AI 분석 중일 수 있습니다)' : '검증 (미리보기)'}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={handleExecute}
+              disabled={!canExecute}
+              title={!response ? '먼저 검증을 실행하세요' : response.errors?.length > 0 ? '오류를 수정 후 실행하세요' : ''}
+            >
+              실제 저장
+            </button>
+          </div>
+          {!response && <div style={{ color: '#7a7f9a', fontSize: 12, marginTop: 8 }}>먼저 검증을 실행해 결과를 확인하세요.</div>}
         </div>
-        <div style={s.btnRow}>
-          <button
-            className="btn btn-secondary"
-            onClick={handlePreview}
-            disabled={loading || !file}
-          >
-            {loading ? '처리 중... (AI 분석 중일 수 있습니다)' : '검증 (미리보기)'}
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleExecute}
-            disabled={!canExecute}
-            title={!response ? '먼저 검증을 실행하세요' : response.errors?.length > 0 ? '오류를 수정 후 실행하세요' : ''}
-          >
-            실제 저장
-          </button>
+      )}
+
+      {/* AI 대화 보완 */}
+      {chatSession && (
+        <div style={s.chatWrap}>
+          <div style={s.chatTitle}>AI 큐시트 보완</div>
+          <div style={s.chatSub}>누락된 정보 {chatSession.issuesCount}건을 대화로 채웁니다.</div>
+
+          <div style={s.chatLog} ref={chatLogRef}>
+            {chatMessages.map((m, i) => (
+              <div key={i} style={s.chatBubble(m.role)}>{m.text}</div>
+            ))}
+            {chatLoading && (
+              <div style={{ ...s.chatBubble('assistant'), color: '#5a5f7a' }}>입력 중...</div>
+            )}
+          </div>
+
+          {chatResolved ? (
+            <>
+              <div style={s.resolvedBanner}>모든 누락 정보가 채워졌습니다. 큐를 저장하시겠습니까?</div>
+              <div style={s.btnRow}>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleApplySession}
+                  disabled={loading}
+                >
+                  {loading ? '저장 중...' : 'MA2에 저장'}
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => { setChatSession(null); setChatMessages([]); setChatResolved(false) }}
+                >
+                  취소
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={s.chatInputRow}>
+              <input
+                style={s.chatInput}
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleChatSend()}
+                placeholder="답변을 입력하세요..."
+                disabled={chatLoading}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleChatSend}
+                disabled={chatLoading || !chatInput.trim()}
+                style={{ whiteSpace: 'nowrap' }}
+              >
+                전송
+              </button>
+            </div>
+          )}
         </div>
-        {!response && <div style={{ color: '#7a7f9a', fontSize: 12, marginTop: 8 }}>먼저 검증을 실행해 결과를 확인하세요.</div>}
-      </div>
+      )}
 
       {/* 결과 */}
       {response && (
@@ -183,7 +328,7 @@ export default function ImportCuePanel({ onClose, onImported }) {
             {response.errors?.length > 0 && ` / 오류 ${response.errors.length}행`}
             {!response.dry_run && ` / 성공 ${response.results?.filter(r => r.ok).length ?? 0}건`}
             {response.parser === 'ai' && (
-              <span style={{fontSize:'11px', color:'#888', marginLeft:8}}>[AI 파싱]</span>
+              <span style={{ fontSize: '11px', color: '#888', marginLeft: 8 }}>[AI 파싱]</span>
             )}
           </div>
 

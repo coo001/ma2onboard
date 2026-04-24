@@ -352,6 +352,102 @@ def build_commands_from_ai(row: dict) -> list:
     return cmds
 
 
+def detect_missing_fields(rows: list) -> list:
+    """
+    누락 필드를 감지하여 질문이 필요한 큐 목록을 반환한다.
+    필수 필드: fixtures/intensity_per_fixture, intensity (fixtures만 있고 intensity 없는 경우)
+    label은 전체 50% 이상 누락 시 일괄 이슈로 추가.
+    반환: [{"cue": "3", "label": "블루워시", "missing": ["fixtures"]}, ...]
+    """
+    issues = []
+    label_missing_cues = []
+
+    for row in rows:
+        missing = []
+        has_per_fixture = bool(row.get("intensity_per_fixture"))
+        has_fixtures = bool(row.get("fixtures"))
+
+        if not has_per_fixture and not has_fixtures:
+            missing.append("fixtures")
+        elif has_fixtures and not has_per_fixture and row.get("intensity") is None:
+            missing.append("intensity")
+
+        if not str(row.get("label") or "").strip():
+            label_missing_cues.append(row["cue"])
+
+        if missing:
+            issues.append({
+                "cue": row["cue"],
+                "label": row.get("label", ""),
+                "missing": missing,
+            })
+
+    if len(label_missing_cues) > len(rows) / 2:
+        issues.append({
+            "cue": "__batch_label__",
+            "cue_list": label_missing_cues,
+            "missing": ["label"],
+        })
+
+    return issues
+
+
+def apply_patches(rows: list, patches: list) -> list:
+    """
+    GPT가 생성한 패치를 rows에 적용한다.
+    patches: [{"cue": "3", "field": "fixtures", "value": [5, 6, 7]}, ...]
+    label 배치 패치: {"cue": "__batch_label__", "field": "label", "value": {"1": "등장", "2": "절정", ...}}
+    """
+    row_map = {r["cue"]: r for r in rows}
+
+    for patch in patches:
+        cue_key = str(patch.get("cue", ""))
+        field = patch.get("field", "")
+        value = patch.get("value")
+
+        if cue_key == "__batch_label__" and field == "label" and isinstance(value, dict):
+            for cue_num, lbl in value.items():
+                if cue_num in row_map:
+                    row_map[cue_num]["label"] = str(lbl).strip()[:40]
+            continue
+
+        if cue_key not in row_map:
+            continue
+
+        row = row_map[cue_key]
+
+        if field == "fixtures":
+            try:
+                parsed = _parse_fixtures(str(value) if not isinstance(value, list) else " ".join(str(v) for v in value))
+                row["fixtures"] = parsed
+            except RowValidationError:
+                pass
+        elif field == "intensity":
+            try:
+                v = int(float(str(value)))
+                row["intensity"] = max(0, min(100, v))
+            except (ValueError, TypeError):
+                pass
+        elif field == "label":
+            row["label"] = str(value or "").strip()[:40]
+        elif field == "color" and isinstance(value, dict):
+            try:
+                row["color"] = {
+                    "r": max(0, min(100, int(value.get("r", 0)))),
+                    "g": max(0, min(100, int(value.get("g", 0)))),
+                    "b": max(0, min(100, int(value.get("b", 0)))),
+                }
+            except (ValueError, TypeError):
+                pass
+        elif field == "fade":
+            try:
+                row["fade"] = float(value)
+            except (ValueError, TypeError):
+                pass
+
+    return list(row_map.values())
+
+
 def generate_template_xlsx(path: Path) -> None:
     wb = openpyxl.Workbook()
     ws = wb.active

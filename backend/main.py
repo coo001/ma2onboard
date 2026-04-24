@@ -53,12 +53,14 @@ try:
     from .excel_importer import (
         parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
         is_template_format, extract_sheet_text, normalize_ai_rows, build_commands_from_ai,
+        detect_missing_fields, apply_patches,
     )
     from .telnet_client import MA2_DEFAULT_PORT, ma2_client
 except ImportError:
     from excel_importer import (
         parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
         is_template_format, extract_sheet_text, normalize_ai_rows, build_commands_from_ai,
+        detect_missing_fields, apply_patches,
     )
     from ma2_commands import (
         COLOR_PRESETS,
@@ -86,9 +88,9 @@ except ImportError:
     from telnet_client import MA2_DEFAULT_PORT, ma2_client
 
 try:
-    from .ai_controller import parse_command as ai_parse, update_states as ai_update, parse_excel_sheet
+    from .ai_controller import parse_command as ai_parse, update_states as ai_update, parse_excel_sheet, chat_complete_cues
 except ImportError:
-    from ai_controller import parse_command as ai_parse, update_states as ai_update, parse_excel_sheet
+    from ai_controller import parse_command as ai_parse, update_states as ai_update, parse_excel_sheet, chat_complete_cues
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -105,6 +107,18 @@ CUES_FILE = Path(__file__).resolve().parent / "cues.json"
 _cues_lock = asyncio.Lock()
 
 _GROUP_NAME_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+
+
+from dataclasses import dataclass, field as dc_field
+
+@dataclass
+class CueSession:
+    rows: list
+    issues: list
+    history: list = dc_field(default_factory=list)
+    completed: bool = False
+
+_cue_sessions: dict = {}
 
 
 def _read_groups() -> dict:
@@ -310,6 +324,14 @@ class CueRequest(BaseModel):
     label: Optional[str] = ""
 
 
+class CompleteChatRequest(BaseModel):
+    message: str
+
+
+class ApplySessionRequest(BaseModel):
+    on_error: str = "skip"
+
+
 @app.post("/api/groups")
 async def create_group(req: GroupRequest):
     if not _GROUP_NAME_RE.match(req.name):
@@ -432,6 +454,21 @@ async def import_cues_excel(
                 raise HTTPException(status_code=400, detail="AI가 큐 데이터를 인식하지 못했습니다. 파일을 확인해 주세요.")
             rows = normalize_ai_rows(ai_rows)
             errors = []  # AI 파싱은 행 단위 에러 없이 전체 성공/실패
+
+            issues = detect_missing_fields(rows)
+            if issues:
+                first = await chat_complete_cues([], issues, "큐시트 보완을 시작합니다")
+                session_id = str(_uuid.uuid4())[:8]
+                sess = CueSession(rows=rows, issues=issues)
+                if first.get("next_question"):
+                    sess.history.append({"role": "assistant", "content": first["next_question"]})
+                _cue_sessions[session_id] = sess
+                return {
+                    "session_id": session_id,
+                    "question": first.get("next_question"),
+                    "issues_count": len(issues),
+                    "parser": "ai",
+                }
         except HTTPException:
             raise
         except Exception as e:
@@ -533,6 +570,106 @@ async def import_cues_template():
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="cues_template.xlsx",
     )
+
+
+@app.post("/api/cues/complete/{session_id}")
+async def complete_cue_chat(session_id: str, req: CompleteChatRequest):
+    sess = _cue_sessions.get(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    if sess.completed:
+        return {"session_id": session_id, "next_question": None, "all_resolved": True, "issues_remaining": 0}
+
+    result = await chat_complete_cues(sess.history, sess.issues, req.message)
+
+    if result.get("patches"):
+        sess.rows = apply_patches(sess.rows, result["patches"])
+        sess.issues = detect_missing_fields(sess.rows)
+
+    sess.history.append({"role": "user", "content": req.message})
+    if result.get("next_question"):
+        sess.history.append({"role": "assistant", "content": result["next_question"]})
+
+    sess.completed = result.get("all_resolved", False) or len(sess.issues) == 0
+
+    return {
+        "session_id": session_id,
+        "next_question": result.get("next_question"),
+        "all_resolved": sess.completed,
+        "issues_remaining": len(sess.issues),
+    }
+
+
+@app.post("/api/cues/complete/{session_id}/apply")
+async def apply_cue_session(session_id: str, req: ApplySessionRequest = None):
+    if req is None:
+        req = ApplySessionRequest()
+    sess = _cue_sessions.get(session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+
+    on_error = req.on_error if req.on_error in ("skip", "abort") else "skip"
+    rows = sess.rows
+    valid_rows, errors = [], []
+    for r in rows:
+        try:
+            r["commands"] = build_commands_from_ai(r)
+            valid_rows.append(r)
+        except ValueError as e:
+            errors.append({"row_index": r.get("row_index", "?"), "column": "cue", "message": str(e)})
+
+    results = []
+    to_process = []
+    async with _cues_lock:
+        cues_list, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues_list)
+        existing_numbers = {c["number"] for c in cues_list}
+        for r in valid_rows:
+            if r["cue"] in existing_numbers:
+                results.append({**_row_stub(r), "ok": False, "error": "중복 큐 번호(skip)", "commands": r["commands"]})
+            else:
+                to_process.append(r)
+                existing_numbers.add(r["cue"])
+
+    succeeded_cues, aborted = [], False
+    for r in to_process:
+        if aborted:
+            results.append({**_row_stub(r), "ok": False, "error": "이전 오류로 중단됨", "commands": r["commands"]})
+            continue
+        try:
+            for cmd in r["commands"]:
+                res = await send_and_log(cmd)
+                if not res.get("ok"):
+                    raise RuntimeError(res.get("error") or "명령 실패")
+            succeeded_cues.append({"number": r["cue"], "label": r.get("label", ""), "source": "excel"})
+            results.append({**_row_stub(r), "ok": True, "error": "", "commands": r["commands"]})
+        except Exception as exc:
+            results.append({**_row_stub(r), "ok": False, "error": str(exc), "commands": r["commands"]})
+            if on_error == "abort":
+                aborted = True
+
+    if succeeded_cues:
+        async with _cues_lock:
+            cues_list, _ = _read_cues()
+            existing = {c["number"] for c in cues_list}
+            for c in succeeded_cues:
+                if c["number"] not in existing:
+                    cues_list.append(c)
+            _write_cues(cues_list)
+
+    _cue_sessions.pop(session_id, None)
+
+    succeeded = [x for x in results if x["ok"]]
+    return {
+        "ok": len(succeeded) > 0 and not errors,
+        "dry_run": False,
+        "parser": "ai",
+        "total_rows": len(rows),
+        "valid_rows": len(valid_rows),
+        "errors": errors,
+        "results": results,
+    }
 
 
 @app.delete("/api/cues/{cue_number}")

@@ -77,4 +77,6 @@ export const api = {
     }
   },
   importTemplateUrl: () => BASE + '/cues/import-template',
+  completeCueChat: (sessionId, message) => post(`/cues/complete/${sessionId}`, { message }),
+  applyCueSession: (sessionId, onError = 'skip') => post(`/cues/complete/${sessionId}/apply`, { on_error: onError }),
 }

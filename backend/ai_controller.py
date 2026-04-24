@@ -158,6 +158,73 @@ async def parse_command(text: str) -> dict:
     return json.loads(response.choices[0].message.content)
 
 
+async def chat_complete_cues(
+    history: list,
+    issues: list,
+    user_message: str,
+) -> dict:
+    """
+    GPT를 호출하여 사용자 답변을 파싱하고 patches + next_question을 반환한다.
+    history: OpenAI messages format의 이전 대화 목록
+    issues: 현재 미해결 이슈 목록 (detect_missing_fields 결과)
+    반환: {"patches": [...], "next_question": str|None, "all_resolved": bool}
+    """
+    system_prompt = """당신은 공연 조명 큐시트 보완 전문 AI입니다.
+사용자와 대화하며 부족한 큐시트 정보를 채워나갑니다.
+
+반환 JSON 스키마:
+{
+  "patches": [
+    {"cue": "3", "field": "fixtures", "value": [5, 6, 7]},
+    {"cue": "7", "field": "label", "value": "등장"}
+  ],
+  "next_question": "다음으로 확인할 내용이 있으면 질문 문장, 없으면 null",
+  "all_resolved": false
+}
+
+필드별 value 타입:
+- fixtures: 정수 배열 [1, 2, 3]
+- intensity: 0~100 정수
+- label: 문자열 (단일 큐) 또는 {"큐번호": "레이블"} (배치)
+- color: {"r": 0~100, "g": 0~100, "b": 0~100}
+- fade: float
+
+규칙:
+- 한 번에 하나의 주제만 질문
+- 여러 큐에 같은 필드 누락 시 묶어서 질문
+- "모르겠어요", "기본값으로" 답변 시 합리적 기본값 적용 (fixtures: [1,2,3,4], intensity: 80)
+- 배치 label 패치 시 cue 필드를 "__batch_label__"으로 설정
+- all_resolved는 현재 issues 중 해결된 것이 모두 처리됐을 때 true
+- 반드시 JSON만 반환"""
+
+    issues_context = json.dumps(issues, ensure_ascii=False)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"현재 미해결 이슈:\n{issues_context}"},
+    ] + history + [
+        {"role": "user", "content": user_message},
+    ]
+
+    for attempt in range(2):
+        try:
+            resp = await _client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0,
+                response_format={"type": "json_object"},
+            )
+            parsed = json.loads(resp.choices[0].message.content)
+            return {
+                "patches": parsed.get("patches", []),
+                "next_question": parsed.get("next_question"),
+                "all_resolved": bool(parsed.get("all_resolved", False)),
+            }
+        except Exception as e:
+            if attempt == 1:
+                raise RuntimeError(f"AI 대화 처리 실패: {e}")
+    return {"patches": [], "next_question": None, "all_resolved": False}
+
+
 async def parse_excel_sheet(rows_text: str) -> list:
     """
     엑셀 시트의 텍스트 표현을 받아 AI로 파싱하여 큐 목록 JSON을 반환한다.
