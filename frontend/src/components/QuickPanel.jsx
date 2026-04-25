@@ -187,6 +187,10 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
   const [fixtureIntensities, setFixtureIntensities] = useState({})
   const [cueLabel, setCueLabel] = useState('')
   const colorDebounce = useRef(null)
+  // 최신 fixture 상태를 ref로 유지 — toggleActive 클로저 stale 방지
+  const fixturePositionsRef = useRef({})
+  const fixtureColorsRef = useRef({})
+  const fixtureIntensitiesRef = useRef({})
 
   const [selectedColorPresetId, setSelectedColorPresetId] = useState(null)
   const [selectedPositionPresetId, setSelectedPositionPresetId] = useState(null)
@@ -195,6 +199,10 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
   useEffect(() => {
     return () => { if (colorDebounce.current) clearTimeout(colorDebounce.current) }
   }, [])
+  // refs를 최신 state와 동기화
+  useEffect(() => { fixturePositionsRef.current = fixturePositions }, [fixturePositions])
+  useEffect(() => { fixtureColorsRef.current = fixtureColors }, [fixtureColors])
+  useEffect(() => { fixtureIntensitiesRef.current = fixtureIntensities }, [fixtureIntensities])
 
   // ── 프리셋 로드 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -220,9 +228,9 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
     // setState가 sync하게 willAdd를 세팅한 후 다음 microtask에서 부수효과 실행
     Promise.resolve().then(() => {
       if (willAdd) {
-        if (fixturePositions[id]) { const { pan: p, tilt: t, zoom: z } = fixturePositions[id]; setPan(p); setTilt(t); setZoom(z) }
-        if (fixtureColors[id]) setColor(fixtureColors[id])
-        if (fixtureIntensities[id] !== undefined) setIntensity(fixtureIntensities[id])
+        if (fixturePositionsRef.current[id]) { const { pan: p, tilt: t, zoom: z } = fixturePositionsRef.current[id]; setPan(p); setTilt(t); setZoom(z) }
+        if (fixtureColorsRef.current[id]) setColor(fixtureColorsRef.current[id])
+        if (fixtureIntensitiesRef.current[id] !== undefined) setIntensity(fixtureIntensitiesRef.current[id])
       }
     })
   }
@@ -623,9 +631,10 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
           <div className="qp-preset-col">
             <div className="qp-preset-col-head">
               <span>씬 ({scenePresets.length})</span>
-              {selected.length > 0 && (
-                <span className="qp-preset-col-sel">{selected.length}ch</span>
-              )}
+              {selected.length > 0
+                ? <span className="qp-preset-col-sel">{selected.length}ch 선택됨</span>
+                : <span style={{ fontSize: 9, color: 'var(--text-dim)' }}>우클릭으로 채널 선택</span>
+              }
             </div>
             <PresetBank
               presets={scenePresets}
@@ -711,6 +720,11 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
             placeholder="레이블 (선택, 예: 오프닝)"
             style={{ flex: 1, marginTop: 4 }}
           />
+          {cueLabel && cueSaveName.includes(',') && (
+            <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2 }}>
+              여러 큐에 같은 레이블이 모두 적용됩니다
+            </div>
+          )}
         </div>
 
       </div>

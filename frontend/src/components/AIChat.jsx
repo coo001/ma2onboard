@@ -157,7 +157,7 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
   async function send() {
     const text = input.trim()
     if (!text || loading) return
-    const isHelpQuery = /[?？]|뭐야|어떻게|뭔지|설명|의미|차이/.test(text)
+    const isHelpQuery = /뭐야|뭔지|어떻게|설명|의미|차이|알려줘|가르쳐|뭐예요|무엇|어떤게/.test(text)
     if (!connected && !isHelpQuery) return
     setInput('')
     addMsg('user', text)
