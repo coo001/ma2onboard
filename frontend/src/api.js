@@ -94,8 +94,9 @@ export const api = {
   previewRelease: () => post('/preview/release', {}),
   reconcileCues: () => post('/cues/reconcile', {}),
   getPresets: () => get('/presets'),
-  savePositionPreset: (name, pan, tilt, zoom) => post('/presets/position', { name, pan, tilt, zoom }),
+  savePositionPreset: (data) => post('/presets/position', data),
   saveColorPreset: (name, h, s, v) => post('/presets/color', { name, h, s, v }),
+  saveScenePreset: (data) => post('/presets/scene', data),
   deletePreset: (kind, id) => request(`/presets/${kind}/${id}`, { method: 'DELETE' }),
   bulkCreatePresets: (presets) => post('/presets/bulk', presets),
 }

@@ -41,7 +41,7 @@ const s = {
   errorText: { fontSize: 12, color: '#f26b6b' },
 }
 
-export default function BulkEditModal({ cueNumbers, onClose, onSaved }) {
+export default function BulkEditModal({ cueNumbers, onClose, onSaved, colorPresetId = null, positionPresetId = null }) {
   const [selectedFixtures, setSelectedFixtures] = useState(new Set(ALL_FIXTURES))
   const [editColor, setEditColor] = useState(false)
   const [editPosition, setEditPosition] = useState(false)
@@ -149,6 +149,8 @@ export default function BulkEditModal({ cueNumbers, onClose, onSaved }) {
         fixtures,
         editColor ? color : null,
         editPosition ? position : null,
+        editColor ? colorPresetId : null,
+        editPosition ? positionPresetId : null,
       )
       if (r.ok === false && !r.updated?.length) {
         setError(r.error || '저장 실패')

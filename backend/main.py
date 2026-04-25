@@ -1230,6 +1230,9 @@ async def ai_command_endpoint(req: AICommandRequest):
 
     actions: list[str] = []
 
+    if parsed.get("mode") == "help":
+        return {"ok": True, "explanation": parsed.get("explanation", ""), "actions": []}
+
     if parsed.get("mode") == "scene":
         scene_fixtures: list[dict] = parsed.get("scene_fixtures") or []
         if not scene_fixtures:
@@ -1467,29 +1470,54 @@ _presets_lock = asyncio.Lock()
 
 def _read_presets() -> dict:
     if not _PRESETS_FILE.exists():
-        return {"position": [], "color": []}
+        return {"position": [], "color": [], "scene": []}
     try:
         data = json.loads(_PRESETS_FILE.read_text(encoding="utf-8"))
         data.setdefault("position", [])
         data.setdefault("color", [])
+        data.setdefault("scene", [])
         return data
     except Exception:
-        return {"position": [], "color": []}
+        return {"position": [], "color": [], "scene": []}
 
 def _write_presets(data: dict) -> None:
     _PRESETS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+class PositionPresetGroup(BaseModel):
+    fixtures: list[int] = Field(min_length=1, max_length=64)
+    pan: int = Field(ge=0, le=100)
+    tilt: int = Field(ge=0, le=100)
+    zoom: int = Field(ge=0, le=100)
+
 class PositionPresetCreate(BaseModel):
     name: str
-    pan: int
-    tilt: int
-    zoom: int
+    pan: int = 50
+    tilt: int = 50
+    zoom: int = 50
+    groups: Optional[list[PositionPresetGroup]] = None
 
 class ColorPresetCreate(BaseModel):
     name: str
     h: int
     s: int
     v: int
+
+class SceneFixtureColor(BaseModel):
+    h: int = Field(ge=0, le=360)
+    s: int = Field(ge=0, le=100)
+    v: int = Field(ge=0, le=100)
+
+class ScenePresetFixture(BaseModel):
+    id: int = Field(ge=1, le=512)
+    intensity: Optional[int] = Field(default=None, ge=0, le=100)
+    color: Optional[SceneFixtureColor] = None
+    pan: Optional[int] = Field(default=None, ge=0, le=100)
+    tilt: Optional[int] = Field(default=None, ge=0, le=100)
+    zoom: Optional[int] = Field(default=None, ge=0, le=100)
+
+class ScenePresetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=30)
+    fixtures: list[ScenePresetFixture] = Field(min_length=1, max_length=64)
 
 class PresetRename(BaseModel):
     name: str
@@ -1504,6 +1532,8 @@ async def create_position_preset(req: PositionPresetCreate):
     async with _presets_lock:
         data = _read_presets()
         preset = {"id": str(_uuid.uuid4())[:8], "name": req.name.strip()[:30], "pan": req.pan, "tilt": req.tilt, "zoom": req.zoom}
+        if req.groups:
+            preset["groups"] = [g.model_dump() for g in req.groups]
         data["position"].append(preset)
         _write_presets(data)
     return {"ok": True, "preset": preset}
@@ -1514,6 +1544,15 @@ async def create_color_preset(req: ColorPresetCreate):
         data = _read_presets()
         preset = {"id": str(_uuid.uuid4())[:8], "name": req.name.strip()[:30], "h": req.h, "s": req.s, "v": req.v}
         data["color"].append(preset)
+        _write_presets(data)
+    return {"ok": True, "preset": preset}
+
+@app.post("/api/presets/scene")
+async def create_scene_preset(req: ScenePresetCreate):
+    async with _presets_lock:
+        data = _read_presets()
+        preset = {"id": str(_uuid.uuid4())[:8], "name": req.name.strip()[:30], "fixtures": [f.model_dump() for f in req.fixtures]}
+        data["scene"].append(preset)
         _write_presets(data)
     return {"ok": True, "preset": preset}
 
