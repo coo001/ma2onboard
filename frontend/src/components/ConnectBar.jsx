@@ -7,6 +7,7 @@ const ALL_FIXTURES = [1,2,3,4,5,6,7,8,9,10]
 export default function ConnectBar({
   connected, autoStatus, autoInfo, theme,
   onThemeChange, onRetry, onDisconnect, onToast,
+  demoMode = false, onToggleDemo,
 }) {
   const connecting = autoStatus === 'connecting'
   const ok = connected && autoStatus === 'ok'
@@ -34,6 +35,16 @@ export default function ConnectBar({
       </div>
 
       <div className="topbar-spacer" />
+
+      {/* 데모 모드 토글 */}
+      <button
+        className={`btn sm ${demoMode ? 'primary' : 'ghost'}`}
+        onClick={onToggleDemo}
+        style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.04em' }}
+        title={demoMode ? 'MA2 없이 동작 중 — 클릭하면 데모 종료' : 'MA2 없이 기능 테스트'}
+      >
+        {demoMode ? '● DEMO' : 'DEMO'}
+      </button>
 
       {/* BLACKOUT — 단방향 암전, 복구는 슬라이더로 */}
       <button

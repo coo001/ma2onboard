@@ -480,6 +480,40 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
         </div>
       </Section>
 
+      {/* 선택된 조명기 상태 */}
+      {(active.length > 0 || selected.length > 0) && (
+        <div style={{ padding: '6px 16px 10px', display: 'flex', flexWrap: 'wrap', gap: 6, borderBottom: '1px solid var(--border-soft)' }}>
+          {[...new Set([...active, ...selected])].map(id => {
+            const inActive = active.includes(id)
+            const inSelected = selected.includes(id)
+            const fixtureIntensity = fixtureIntensities[id]
+            const col = fixtureColors[id]
+            const pos = fixturePositions[id]
+            const hex = col ? rgbToHex(...hsvToRgb(col.h, col.s, col.v)) : null
+            const borderColor = inActive ? 'var(--accent)' : 'oklch(0.62 0.18 220)'
+            return (
+              <div key={id} style={{
+                background: 'var(--bg-elev-2)', border: `1.5px solid ${borderColor}`,
+                borderRadius: 'var(--radius-sm)', padding: '5px 8px',
+                minWidth: 58, display: 'flex', flexDirection: 'column', gap: 3,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 14, color: borderColor }}>{id}</span>
+                  {hex && <div style={{ width: 11, height: 11, borderRadius: 2, background: hex, border: '1px solid rgba(0,0,0,0.25)', flexShrink: 0 }} />}
+                  <span style={{ fontSize: 8, color: 'var(--text-dim)', marginLeft: 'auto' }}>
+                    {inActive && inSelected ? '제어·저장' : inActive ? '제어' : '저장'}
+                  </span>
+                </div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-muted)', display: 'flex', gap: 5 }}>
+                  <span>{fixtureIntensity !== undefined ? `${fixtureIntensity}%` : '—'}</span>
+                  {pos && <span>P{pos.pan} T{pos.tilt}</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {/* 밝기 */}
       <Section title="밝기" meta={`${intensity}%`}>
         <Slider value={intensity} onChange={setIntensity} onCommit={()=>applyIntensity(intensity)} hero />
