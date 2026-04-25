@@ -9,6 +9,7 @@ Production-like local use:
 """
 
 import asyncio
+import colorsys
 import json
 import logging
 import os
@@ -56,14 +57,14 @@ try:
     from .excel_importer import (
         parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
         is_template_format, extract_sheet_text, normalize_ai_rows, build_commands_from_ai,
-        detect_missing_fields, apply_patches,
+        detect_missing_fields, apply_patches, extract_preset_candidates,
     )
     from .telnet_client import MA2_DEFAULT_PORT, ma2_client
 except ImportError:
     from excel_importer import (
         parse_workbook, build_commands as excel_build_commands, generate_template_xlsx, RowValidationError,
         is_template_format, extract_sheet_text, normalize_ai_rows, build_commands_from_ai,
-        detect_missing_fields, apply_patches,
+        detect_missing_fields, apply_patches, extract_preset_candidates,
     )
     from ma2_commands import (
         COLOR_PRESETS,
@@ -215,7 +216,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ],
-    allow_methods=["GET", "POST", "DELETE", "PATCH"],
+    allow_methods=["GET", "POST", "DELETE", "PATCH", "PUT"],
     allow_headers=["Content-Type"],
 )
 
@@ -493,9 +494,11 @@ async def import_cues_excel(
 
     # 포맷 자동 감지 및 파싱
     parser_type = "template"
+    _preset_cands: dict = {}
     if is_template_format(content):
         try:
             rows, errors = parse_workbook(content)
+            _preset_cands = extract_preset_candidates(rows)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
     else:
@@ -508,6 +511,7 @@ async def import_cues_excel(
                 raise HTTPException(status_code=400, detail="AI가 큐 데이터를 인식하지 못했습니다. 파일을 확인해 주세요.")
             rows = normalize_ai_rows(ai_rows)
             errors = []  # AI 파싱은 행 단위 에러 없이 전체 성공/실패
+            _preset_cands = extract_preset_candidates(rows)
 
             issues = detect_missing_fields(rows)
             if issues:
@@ -522,6 +526,7 @@ async def import_cues_excel(
                     "question": first.get("next_question"),
                     "issues_count": len(issues),
                     "parser": "ai",
+                    "suggested_presets": _preset_cands,
                 }
         except HTTPException:
             raise
@@ -558,6 +563,7 @@ async def import_cues_excel(
             "valid_rows": valid_rows,
             "errors": errors,
             "results": results,
+            "suggested_presets": _preset_cands,
         }
 
     # 1단계: lock 안에서 기존 번호 확인 및 처리 대상 예약
@@ -612,6 +618,7 @@ async def import_cues_excel(
         "valid_rows": valid_rows,
         "errors": errors,
         "results": results,
+        "suggested_presets": _preset_cands,
     }
 
 
@@ -723,6 +730,7 @@ async def apply_cue_session(session_id: str, req: ApplySessionRequest = None):
         "valid_rows": len(valid_rows),
         "errors": errors,
         "results": results,
+        "suggested_presets": extract_preset_candidates(rows),
     }
 
 
@@ -743,6 +751,8 @@ class BulkEditRequest(BaseModel):
     fixture_numbers: List[int] = Field(min_length=1)
     color: Optional[ColorModel] = None
     position: Optional[PositionModel] = None
+    colorPresetId: Optional[str] = None
+    positionPresetId: Optional[str] = None
 
 
 class PreviewColorRequest(BaseModel):
@@ -819,8 +829,14 @@ async def bulk_edit_cues(req: BulkEditRequest):
             if c["number"] in updated:
                 if req.color:
                     c["color"] = req.color.model_dump()
+                    if req.colorPresetId:
+                        c["colorPresetId"] = req.colorPresetId
                 if req.position:
                     c["position"] = req.position.model_dump(exclude_none=True)
+                    if req.positionPresetId:
+                        c["positionPresetId"] = req.positionPresetId
+                if req.fixture_numbers:
+                    c["fixture_numbers"] = req.fixture_numbers
         _write_cues(cues)
         refreshed = cues
 
@@ -1482,6 +1498,39 @@ async def create_color_preset(req: ColorPresetCreate):
         _write_presets(data)
     return {"ok": True, "preset": preset}
 
+class BulkPresetColorItem(BaseModel):
+    name: str
+    h: int
+    s: int
+    v: int
+
+class BulkPresetPositionItem(BaseModel):
+    name: str
+    pan: int
+    tilt: int
+    zoom: int
+
+class BulkPresetCreate(BaseModel):
+    color: List[BulkPresetColorItem] = []
+    position: List[BulkPresetPositionItem] = []
+
+@app.post("/api/presets/bulk")
+async def bulk_create_presets(req: BulkPresetCreate):
+    async with _presets_lock:
+        data = _read_presets()
+        created: dict = {"color": [], "position": []}
+        for cp in req.color:
+            preset = {"id": str(_uuid.uuid4())[:8], "name": cp.name.strip()[:30], "h": cp.h, "s": cp.s, "v": cp.v}
+            data["color"].append(preset)
+            created["color"].append(preset)
+        for pp in req.position:
+            preset = {"id": str(_uuid.uuid4())[:8], "name": pp.name.strip()[:30], "pan": pp.pan, "tilt": pp.tilt, "zoom": pp.zoom}
+            data["position"].append(preset)
+            created["position"].append(preset)
+        _write_presets(data)
+    return {"ok": True, "created": created}
+
+
 @app.delete("/api/presets/{kind}/{preset_id}")
 async def delete_preset(kind: str, preset_id: str):
     if kind not in ("position", "color"):
@@ -1507,6 +1556,127 @@ async def rename_preset(kind: str, preset_id: str, req: PresetRename):
                 _write_presets(data)
                 return {"ok": True, "preset": p}
         raise HTTPException(status_code=404, detail="프리셋을 찾을 수 없습니다.")
+
+
+class PresetValueUpdate(BaseModel):
+    # position
+    pan: Optional[int] = Field(default=None, ge=0, le=100)
+    tilt: Optional[int] = Field(default=None, ge=0, le=100)
+    zoom: Optional[int] = Field(default=None, ge=0, le=100)
+    # color
+    h: Optional[int] = Field(default=None, ge=0, le=360)
+    s: Optional[int] = Field(default=None, ge=0, le=100)
+    v: Optional[int] = Field(default=None, ge=0, le=100)
+
+
+@app.put("/api/presets/{kind}/{preset_id}")
+async def update_preset_values(kind: str, preset_id: str, req: PresetValueUpdate):
+    """프리셋 값 업데이트 + 해당 프리셋을 참조하는 모든 큐 자동 업데이트."""
+    if kind not in ("position", "color"):
+        raise HTTPException(status_code=400, detail="kind는 position 또는 color여야 합니다.")
+
+    # 1. presets.json 업데이트
+    async with _presets_lock:
+        data = _read_presets()
+        target = next((p for p in data[kind] if p["id"] == preset_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="프리셋을 찾을 수 없습니다.")
+        if kind == "position":
+            if req.pan is not None: target["pan"] = req.pan
+            if req.tilt is not None: target["tilt"] = req.tilt
+            if req.zoom is not None: target["zoom"] = req.zoom
+        else:  # color
+            if req.h is not None: target["h"] = req.h
+            if req.s is not None: target["s"] = req.s
+            if req.v is not None: target["v"] = req.v
+        _write_presets(data)
+        updated_preset = dict(target)
+
+    # 2. cues.json에서 해당 presetId를 참조하는 큐 찾아 값 업데이트
+    updated_cues = []
+    # lock 안에서 MA2 재전송에 필요한 큐 dict 복사본을 만들어둔다 (race condition 방지)
+    updated_cue_dicts: list[dict] = []
+    async with _cues_lock:
+        cues, migrated = _read_cues()
+        if migrated:
+            _write_cues(cues)
+
+        preset_id_key = "positionPresetId" if kind == "position" else "colorPresetId"
+        for cue in cues:
+            if cue.get(preset_id_key) != preset_id:
+                continue
+            if kind == "position":
+                # zoom 값을 bulk-edit과 동일한 "focus" 키로 저장해 cmd_preview_position과 일치시킨다
+                # 기존 position과 병합하여 변경되지 않은 필드(tilt/zoom 등)를 보존한다
+                existing_pos = cue.get("position") or {}
+                new_pos = {}
+                if updated_preset.get("pan") is not None:
+                    new_pos["pan"] = updated_preset["pan"]
+                if updated_preset.get("tilt") is not None:
+                    new_pos["tilt"] = updated_preset["tilt"]
+                if updated_preset.get("zoom") is not None:
+                    new_pos["focus"] = updated_preset["zoom"]
+                cue["position"] = {**existing_pos, **new_pos}
+            else:  # color — HSV → RGB (0~100 범위)
+                h = updated_preset.get("h", 0)
+                s = updated_preset.get("s", 0)
+                v = updated_preset.get("v", 0)
+                r_f, g_f, b_f = colorsys.hsv_to_rgb(h / 360, s / 100, v / 100)
+                cue["color"] = {
+                    "r": round(r_f * 100),
+                    "g": round(g_f * 100),
+                    "b": round(b_f * 100),
+                }
+            updated_cues.append(cue["number"])
+            # lock 해제 전에 복사본 확보
+            updated_cue_dicts.append(dict(cue))
+
+        if updated_cues:
+            _write_cues(cues)
+
+    # 3. MA2 telnet 재전송 (best-effort — 실패해도 200 반환)
+    warn_no_fixture: list[str] = []
+    if updated_cue_dicts:
+        if _bridge is not None:
+            is_connected = _bridge.ma2_connected
+        else:
+            is_connected = ma2_client.connected
+        if is_connected:
+            for cue in updated_cue_dicts:
+                cue_num = cue["number"]
+                fixture_numbers = cue.get("fixture_numbers") or []
+                if not fixture_numbers:
+                    warn_no_fixture.append(cue_num)
+                    continue
+                try:
+                    await send_and_log(cmd_goto_cue(cue_num))
+                    if kind == "color" and cue.get("color"):
+                        col = cue["color"]
+                        cmds = cmd_preview_color(
+                            fixture_numbers,
+                            col["r"], col["g"], col["b"],
+                        )
+                        for c in cmds:
+                            await send_and_log(c)
+                    elif kind == "position" and cue.get("position"):
+                        pos = cue["position"]
+                        cmds = cmd_preview_position(
+                            fixture_numbers,
+                            pan=pos.get("pan"),
+                            tilt=pos.get("tilt"),
+                            focus=pos.get("focus"),
+                        )
+                        for c in cmds:
+                            await send_and_log(c)
+                    await send_and_log(cmd_update_cue(cue_num))
+                    await asyncio.sleep(0.1)
+                except Exception as exc:
+                    logger.warning(f"[preset-update] 큐 {cue_num} MA2 재전송 실패: {exc}")
+
+    response: dict = {"ok": True, "updated_cues": updated_cues, "preset": updated_preset}
+    if warn_no_fixture:
+        response["warn_no_fixture"] = warn_no_fixture
+    return response
 
 
 @app.get("/api/health")

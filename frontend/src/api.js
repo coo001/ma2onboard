@@ -82,8 +82,8 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ label }),
     }),
-  bulkEditCues: (cue_numbers, fixture_numbers, color, position) =>
-    post('/cues/bulk-edit', { cue_numbers, fixture_numbers, color, position }),
+  bulkEditCues: (cue_numbers, fixture_numbers, color, position, colorPresetId = null, positionPresetId = null) =>
+    post('/cues/bulk-edit', { cue_numbers, fixture_numbers, color, position, colorPresetId, positionPresetId }),
   previewSnapshot: (cue_numbers, fixture_numbers) =>
     post('/preview/snapshot', { cue_numbers, fixture_numbers }),
   previewColor: (fixture_numbers, color) =>
@@ -97,4 +97,16 @@ export const api = {
   savePositionPreset: (name, pan, tilt, zoom) => post('/presets/position', { name, pan, tilt, zoom }),
   saveColorPreset: (name, h, s, v) => post('/presets/color', { name, h, s, v }),
   deletePreset: (kind, id) => request(`/presets/${kind}/${id}`, { method: 'DELETE' }),
+  bulkCreatePresets: (presets) => post('/presets/bulk', presets),
+}
+
+// 프리셋 값 업데이트 (큐 자동 업데이트 포함)
+export async function updatePresetValues(kind, presetId, values) {
+  const res = await fetch(`/api/presets/${kind}/${presetId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(values),
+  })
+  if (!res.ok) throw new Error('프리셋 업데이트 실패')
+  return res.json()
 }

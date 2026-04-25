@@ -13,7 +13,32 @@ const EXAMPLES = [
 let _id = 0
 const mkId = () => ++_id
 
-export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
+function hsvToHex(h, s, v) {
+  s /= 100; v /= 100
+  const i = Math.floor(h / 60) % 6
+  const f = h / 60 - Math.floor(h / 60)
+  const p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s)
+  let r, g, b
+  switch (i) {
+    case 0: r = v; g = t; b = p; break
+    case 1: r = q; g = v; b = p; break
+    case 2: r = p; g = v; b = t; break
+    case 3: r = p; g = q; b = v; break
+    case 4: r = t; g = p; b = v; break
+    default: r = v; g = p; b = q
+  }
+  return '#' + [r, g, b].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('').toUpperCase()
+}
+
+function initCandidates(suggested) {
+  if (!suggested) return null
+  const color = (suggested.color || []).map(c => ({ ...c, name: c.suggested_name, selected: true }))
+  const position = (suggested.position || []).map(p => ({ ...p, name: p.suggested_name, selected: true }))
+  if (!color.length && !position.length) return null
+  return { color, position }
+}
+
+export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onPresetsCreated }) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState([{
     id: mkId(), role: 'assistant',
@@ -24,6 +49,7 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
   const [excelFile, setExcelFile] = useState(null)
   const [excelResolved, setExcelResolved] = useState(false)
   const [dragOver, setDragOver] = useState(false)
+  const [presetCandidates, setPresetCandidates] = useState(null)
 
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
@@ -38,13 +64,51 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
   }
 
   function cancelExcel() {
-    setExcelSession(null); setExcelFile(null); setExcelResolved(false)
+    setExcelSession(null); setExcelFile(null); setExcelResolved(false); setPresetCandidates(null)
     addMsg('system-msg', '엑셀 가져오기를 취소했습니다.')
+  }
+
+  function togglePreset(kind, idx) {
+    setPresetCandidates(prev => {
+      if (!prev) return prev
+      const list = [...prev[kind]]
+      list[idx] = { ...list[idx], selected: !list[idx].selected }
+      return { ...prev, [kind]: list }
+    })
+  }
+
+  function updatePresetName(kind, idx, name) {
+    setPresetCandidates(prev => {
+      if (!prev) return prev
+      const list = [...prev[kind]]
+      list[idx] = { ...list[idx], name }
+      return { ...prev, [kind]: list }
+    })
   }
 
   async function handleApply() {
     if (!excelSession) return
     setLoading(true)
+
+    // 선택된 프리셋 먼저 생성
+    if (presetCandidates) {
+      const toCreate = {
+        color: presetCandidates.color
+          .filter(c => c.selected && c.name.trim())
+          .map(c => ({ name: c.name.trim(), h: c.h, s: c.s, v: c.v })),
+        position: presetCandidates.position
+          .filter(p => p.selected && p.name.trim())
+          .map(p => ({ name: p.name.trim(), pan: p.pan, tilt: p.tilt, zoom: p.zoom })),
+      }
+      if (toCreate.color.length || toCreate.position.length) {
+        await api.bulkCreatePresets(toCreate)
+        const total = toCreate.color.length + toCreate.position.length
+        addMsg('system-msg', `✓ 프리셋 ${total}개가 생성됐습니다.`)
+        onPresetsCreated?.()
+      }
+    }
+
+    // 큐 적용
     const r = excelSession.sessionId
       ? await api.applyCueSession(excelSession.sessionId, 'skip')
       : await api.importCuesExcel(excelFile, false, 'skip')
@@ -56,13 +120,13 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
     } else {
       addMsg('error-msg', r.error || '저장 실패')
     }
-    setExcelSession(null); setExcelFile(null); setExcelResolved(false)
+    setExcelSession(null); setExcelFile(null); setExcelResolved(false); setPresetCandidates(null)
   }
 
   async function handleFile(file) {
     if (!file) return
     if (!file.name.toLowerCase().endsWith('.xlsx')) { addMsg('error-msg', '.xlsx 파일만 지원합니다.'); return }
-    setExcelFile(file); setExcelSession(null); setExcelResolved(false)
+    setExcelFile(file); setExcelSession(null); setExcelResolved(false); setPresetCandidates(null)
     addMsg('user', `📎 ${file.name}`)
     addMsg('system-msg', '파일을 분석하고 있습니다…')
     setLoading(true)
@@ -70,11 +134,12 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
     setLoading(false)
     if (r.ok === false) { addMsg('error-msg', r.error || '파일 분석 실패'); return }
     if (r.session_id) {
-      setExcelSession({ sessionId: r.session_id, filename: file.name })
+      setExcelSession({ sessionId: r.session_id, filename: file.name, suggestedPresets: r.suggested_presets })
       addMsg('assistant', r.question || `분석 완료. 누락 정보 ${r.issues_count || 0}건을 대화로 채웁니다.`)
     } else {
       setExcelSession({ sessionId: null, filename: file.name })
       setExcelResolved(true)
+      setPresetCandidates(initCandidates(r.suggested_presets))
       addMsg('confirm-msg', `📊 ${file.name}: ${r.valid_rows || 0}개 큐 분석 완료. 저장할까요?`)
     }
   }
@@ -94,6 +159,7 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
         if (r.next_question) addMsg('assistant', r.next_question)
         if (r.all_resolved) {
           setExcelResolved(true)
+          setPresetCandidates(initCandidates(excelSession.suggestedPresets))
           addMsg('confirm-msg', `모든 정보가 채워졌습니다. ${excelSession.filename}의 큐를 저장할까요?`)
         }
       }
@@ -107,6 +173,8 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
     }
     inputRef.current?.focus()
   }
+
+  const hasPresetCandidates = presetCandidates && (presetCandidates.color.length + presetCandidates.position.length > 0)
 
   if (!aiOpen) {
     return (
@@ -222,6 +290,74 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported }) {
             <span>📊 {excelSession.filename}</span>
             <div className="grow" />
             <button className="btn sm ghost" onClick={cancelExcel}>취소</button>
+          </div>
+        )}
+
+        {/* 프리셋 후보 선택 패널 */}
+        {excelResolved && hasPresetCandidates && (
+          <div style={{
+            borderTop: '1px solid var(--border-soft)',
+            padding: '10px 14px',
+            display: 'flex', flexDirection: 'column', gap: 7,
+            maxHeight: 220, overflowY: 'auto',
+            background: 'var(--surface-raised)',
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              프리셋 자동 생성
+            </div>
+            {presetCandidates.color.map((c, i) => (
+              <div key={`color-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <input type="checkbox" checked={c.selected} onChange={() => togglePreset('color', i)}
+                  style={{ cursor: 'pointer', flexShrink: 0 }} />
+                <div style={{
+                  width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                  background: hsvToHex(c.h, c.s, c.v),
+                  border: '1px solid var(--border-soft)',
+                }} />
+                <input
+                  value={c.name}
+                  onChange={e => updatePresetName('color', i, e.target.value)}
+                  disabled={!c.selected}
+                  placeholder="프리셋 이름"
+                  style={{
+                    flex: 1, fontSize: 11, minWidth: 0,
+                    background: 'var(--surface)', border: '1px solid var(--border-soft)',
+                    borderRadius: 4, padding: '2px 6px', color: 'inherit',
+                    opacity: c.selected ? 1 : 0.4,
+                  }}
+                />
+                <span style={{ fontSize: 10, color: 'var(--text-dim)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  큐 {c.cues.slice(0, 3).join(', ')}{c.cues.length > 3 ? '…' : ''}
+                </span>
+              </div>
+            ))}
+            {presetCandidates.position.map((p, i) => (
+              <div key={`pos-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <input type="checkbox" checked={p.selected} onChange={() => togglePreset('position', i)}
+                  style={{ cursor: 'pointer', flexShrink: 0 }} />
+                <span style={{
+                  fontSize: 9, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)',
+                  whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                  P{p.pan} T{p.tilt} Z{p.zoom}
+                </span>
+                <input
+                  value={p.name}
+                  onChange={e => updatePresetName('position', i, e.target.value)}
+                  disabled={!p.selected}
+                  placeholder="프리셋 이름"
+                  style={{
+                    flex: 1, fontSize: 11, minWidth: 0,
+                    background: 'var(--surface)', border: '1px solid var(--border-soft)',
+                    borderRadius: 4, padding: '2px 6px', color: 'inherit',
+                    opacity: p.selected ? 1 : 0.4,
+                  }}
+                />
+                <span style={{ fontSize: 10, color: 'var(--text-dim)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  큐 {p.cues.slice(0, 3).join(', ')}{p.cues.length > 3 ? '…' : ''}
+                </span>
+              </div>
+            ))}
           </div>
         )}
 

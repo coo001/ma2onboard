@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { api } from '../api'
+import { api, updatePresetValues } from '../api'
 import Section from './Section'
 import Slider from './Slider'
 import { Save } from './Icon'
@@ -72,7 +72,7 @@ function ColorPicker({ color, onChange }) {
 }
 
 // ── Preset Bank ────────────────────────────────────────────────────
-function PresetBank({ presets, onApply, onSave, onDelete, saveLabel = '저장', getTip }) {
+function PresetBank({ presets, onApply, onSave, onDelete, onEdit, saveLabel = '저장', getTip, getCueCount }) {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const inputRef = useRef(null)
@@ -89,16 +89,27 @@ function PresetBank({ presets, onApply, onSave, onDelete, saveLabel = '저장', 
 
   return (
     <div className="preset-bank">
-      {presets.map(p => (
-        <div key={p.id} className="preset-chip" onClick={() => onApply(p)}
-          data-tip={getTip ? getTip(p) : undefined}>
-          {p.h !== undefined && (
-            <span className="preset-swatch" style={{ background: rgbToHex(...hsvToRgb(p.h, p.s, p.v)) }} />
-          )}
-          {p.name}
-          <span className="preset-del" onClick={e => { e.stopPropagation(); onDelete(p.id) }}>×</span>
-        </div>
-      ))}
+      {presets.map(p => {
+        const cueCount = getCueCount ? getCueCount(p.id) : 0
+        return (
+          <div key={p.id} className="preset-chip" onClick={() => onApply(p)}
+            data-tip={getTip ? getTip(p) : undefined}>
+            {p.h !== undefined && (
+              <span className="preset-swatch" style={{ background: rgbToHex(...hsvToRgb(p.h, p.s, p.v)) }} />
+            )}
+            {p.name}
+            {cueCount > 0 && (
+              <span style={{ fontSize: 9, color: 'var(--accent)', marginLeft: 2, fontWeight: 700 }}>
+                {cueCount}Q
+              </span>
+            )}
+            <span className="preset-del" title="편집"
+              onClick={e => { e.stopPropagation(); onEdit?.(p) }}
+              style={{ opacity: 0.7 }}>✏</span>
+            <span className="preset-del" onClick={e => { e.stopPropagation(); onDelete(p.id) }}>×</span>
+          </div>
+        )
+      })}
       {adding ? (
         <>
           <input
@@ -121,7 +132,7 @@ function PresetBank({ presets, onApply, onSave, onDelete, saveLabel = '저장', 
 // ── Main Component ─────────────────────────────────────────────────
 const CHANNEL_COUNT = 10
 
-export default function QuickPanel({ onCueStored, onToast }) {
+export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSelect, presetRefreshKey }) {
   const [selected, setSelected] = useState([])
   const [channelIntensities, setChannelIntensities] = useState(() => Array(CHANNEL_COUNT).fill(0))
   const [intensity, setIntensity] = useState(80)
@@ -137,13 +148,26 @@ export default function QuickPanel({ onCueStored, onToast }) {
   const [colPresets, setColPresets] = useState([])
   const colorDebounce = useRef(null)
 
+  // 현재 선택된 프리셋 ID 추적 (큐 저장 시 presetId 함께 전송)
+  const [selectedColorPresetId, setSelectedColorPresetId] = useState(null)
+  const [selectedPositionPresetId, setSelectedPositionPresetId] = useState(null)
+
+  // 프리셋 인라인 편집 상태
+  const [editingPreset, setEditingPreset] = useState(null) // { kind, id, values }
+  const [editSaving, setEditSaving] = useState(false)
+
   // ── 프리셋 로드 ──────────────────────────────────────────────────
   useEffect(() => {
     api.getPresets().then(r => {
       if (r.position) setPosPresets(r.position)
       if (r.color) setColPresets(r.color)
     })
-  }, [])
+  }, [presetRefreshKey])
+
+  // 선택된 presetId가 바뀌면 부모에 알림
+  useEffect(() => {
+    onPresetSelect?.({ colorPresetId: selectedColorPresetId, positionPresetId: selectedPositionPresetId })
+  }, [selectedColorPresetId, selectedPositionPresetId, onPresetSelect])
 
   // ── 채널 ────────────────────────────────────────────────────────
   const toggleChannel = (id) => setSelected(sel => sel.includes(id) ? sel.filter(x=>x!==id) : [...sel,id])
@@ -170,6 +194,11 @@ export default function QuickPanel({ onCueStored, onToast }) {
       await api.intensityColor(intensity, null, hsvToApi(c.h,c.s,c.v), selected)
     }, 80)
   }
+  // 슬라이더 직접 조작 시 presetId 초기화
+  function handlePanChange(v) { setPan(v); setSelectedPositionPresetId(null) }
+  function handleTiltChange(v) { setTilt(v); setSelectedPositionPresetId(null) }
+  function handleZoomChange(v) { setZoom(v); setSelectedPositionPresetId(null) }
+  function handleColorChange(c) { setColor(c); setSelectedColorPresetId(null); applyColor(c) }
   async function applyEffect(mode, rate) {
     if (!selected.length) return
     await api.selectFixtures(selected)
@@ -204,12 +233,14 @@ export default function QuickPanel({ onCueStored, onToast }) {
   }
   async function applyPositionPreset(p) {
     setPan(p.pan); setTilt(p.tilt); setZoom(p.zoom)
+    setSelectedPositionPresetId(p.id)
     await applyPosition(p.pan, p.tilt, p.zoom)
     onToast?.(`"${p.name}" 적용됨`)
   }
   async function deletePositionPreset(id) {
     await api.deletePreset('position', id)
     setPosPresets(prev => prev.filter(p => p.id !== id))
+    if (selectedPositionPresetId === id) setSelectedPositionPresetId(null)
   }
 
   // ── 색상 프리셋 ──────────────────────────────────────────────────
@@ -220,12 +251,42 @@ export default function QuickPanel({ onCueStored, onToast }) {
   }
   async function applyColorPreset(p) {
     const c = { h: p.h, s: p.s, v: p.v }
-    setColor(c); await applyColor(c)
+    setColor(c)
+    setSelectedColorPresetId(p.id)
+    await applyColor(c)
     onToast?.(`"${p.name}" 적용됨`)
   }
   async function deleteColorPreset(id) {
     await api.deletePreset('color', id)
     setColPresets(prev => prev.filter(p => p.id !== id))
+    if (selectedColorPresetId === id) setSelectedColorPresetId(null)
+  }
+
+  // ── 프리셋 값 편집 저장 ───────────────────────────────────────────
+  async function handlePresetEditSave() {
+    if (!editingPreset) return
+    setEditSaving(true)
+    try {
+      const result = await updatePresetValues(editingPreset.kind, editingPreset.id, editingPreset.values)
+      // 로컬 프리셋 목록 업데이트
+      if (editingPreset.kind === 'position') {
+        setPosPresets(prev => prev.map(p => p.id === editingPreset.id ? { ...p, ...editingPreset.values } : p))
+      } else {
+        setColPresets(prev => prev.map(p => p.id === editingPreset.id ? { ...p, ...editingPreset.values } : p))
+      }
+      const count = result.updated_cues?.length ?? 0
+      onToast?.(count > 0 ? `${count}개의 큐가 업데이트되었습니다` : '프리셋이 업데이트되었습니다')
+      if (result.warn_no_fixture?.length) {
+        result.warn_no_fixture.forEach(num => {
+          onToast?.(`주의: 큐 ${num}번은 장비 정보가 없어 MA2에 자동 적용되지 않았습니다`)
+        })
+      }
+      setEditingPreset(null)
+    } catch (e) {
+      onToast?.('프리셋 업데이트 실패')
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   return (
@@ -260,7 +321,7 @@ export default function QuickPanel({ onCueStored, onToast }) {
       <Section title="움직임 / 포커스">
         <div style={{ display: 'flex', gap: 0 }}>
           <div style={{ flex: 6, minWidth: 0 }}>
-            {[['PAN',pan,setPan],['TILT',tilt,setTilt],['ZOOM',zoom,setZoom]].map(([label,value,set])=>(
+            {[['PAN',pan,handlePanChange],['TILT',tilt,handleTiltChange],['ZOOM',zoom,handleZoomChange]].map(([label,value,set])=>(
               <Slider key={label} label={label} showLabel value={value} onChange={set} onCommit={applyPosition}/>
             ))}
           </div>
@@ -278,8 +339,10 @@ export default function QuickPanel({ onCueStored, onToast }) {
               onApply={applyPositionPreset}
               onSave={savePositionPreset}
               onDelete={deletePositionPreset}
+              onEdit={p => setEditingPreset({ kind: 'position', id: p.id, name: p.name, values: { pan: p.pan, tilt: p.tilt, zoom: p.zoom } })}
               saveLabel="저장"
               getTip={p => `PAN ${p.pan} · TILT ${p.tilt} · ZOOM ${p.zoom}`}
+              getCueCount={id => cues.filter(c => c.positionPresetId === id).length}
             />
             {posPresets.length === 0 && (
               <div style={{fontSize:10,color:'var(--text-dim)',lineHeight:1.5}}>
@@ -294,7 +357,7 @@ export default function QuickPanel({ onCueStored, onToast }) {
       <Section title="색상" meta={rgbToHex(...hsvToRgb(color.h,color.s,color.v))}>
         <div style={{ display: 'flex', gap: 0 }}>
           <div style={{ flex: 6, minWidth: 0 }}>
-            <ColorPicker color={color} onChange={c=>{setColor(c);applyColor(c)}}/>
+            <ColorPicker color={color} onChange={handleColorChange}/>
           </div>
           <div style={{
             flex: 4, minWidth: 0,
@@ -310,8 +373,10 @@ export default function QuickPanel({ onCueStored, onToast }) {
               onApply={applyColorPreset}
               onSave={saveColorPreset}
               onDelete={deleteColorPreset}
+              onEdit={p => setEditingPreset({ kind: 'color', id: p.id, name: p.name, values: { h: p.h, s: p.s, v: p.v } })}
               saveLabel="저장"
               getTip={p => `${rgbToHex(...hsvToRgb(p.h, p.s, p.v))}  H${p.h} S${p.s} V${p.v}`}
+              getCueCount={id => cues.filter(c => c.colorPresetId === id).length}
             />
             {colPresets.length === 0 && (
               <div style={{fontSize:10,color:'var(--text-dim)',lineHeight:1.5}}>
@@ -320,6 +385,70 @@ export default function QuickPanel({ onCueStored, onToast }) {
             )}
           </div>
         </div>
+      </Section>
+
+      {/* 프리셋 인라인 편집 모달 */}
+      {editingPreset && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+        }} onClick={() => setEditingPreset(null)}>
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border-soft)',
+            borderRadius: 12, padding: 20, minWidth: 260, display: 'flex', flexDirection: 'column', gap: 12,
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>
+              프리셋 편집: {editingPreset.name}
+            </div>
+            {editingPreset.kind === 'position' ? (
+              <>
+                {[['pan','PAN'],['tilt','TILT'],['zoom','ZOOM']].map(([key, label]) => (
+                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 36, fontSize: 11, color: 'var(--text-dim)' }}>{label}</span>
+                    <input type="range" min={0} max={100} value={editingPreset.values[key]}
+                      onChange={e => setEditingPreset(prev => ({ ...prev, values: { ...prev.values, [key]: Number(e.target.value) } }))}
+                      style={{ flex: 1 }}/>
+                    <input type="number" min={0} max={100} value={editingPreset.values[key]}
+                      onChange={e => setEditingPreset(prev => ({ ...prev, values: { ...prev.values, [key]: Number(e.target.value) } }))}
+                      style={{ width: 44, fontSize: 12, background: 'var(--surface-raised)', border: '1px solid var(--border-soft)', borderRadius: 4, padding: '2px 4px', color: 'inherit' }}/>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <>
+                {[['h','H',0,360],['s','S',0,100],['v','V',0,100]].map(([key, label, mn, mx]) => (
+                  <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 36, fontSize: 11, color: 'var(--text-dim)' }}>{label}</span>
+                    <input type="number" min={mn} max={mx} value={editingPreset.values[key]}
+                      onChange={e => setEditingPreset(prev => ({ ...prev, values: { ...prev.values, [key]: Number(e.target.value) } }))}
+                      style={{ flex: 1, fontSize: 12, background: 'var(--surface-raised)', border: '1px solid var(--border-soft)', borderRadius: 4, padding: '2px 6px', color: 'inherit' }}/>
+                  </div>
+                ))}
+                <div style={{ width: 40, height: 24, borderRadius: 4, border: '1px solid var(--border-soft)',
+                  background: rgbToHex(...hsvToRgb(editingPreset.values.h, editingPreset.values.s, editingPreset.values.v)) }}/>
+              </>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button className="btn sm ghost" onClick={() => setEditingPreset(null)}>취소</button>
+              <button className="btn sm primary" onClick={handlePresetEditSave} disabled={editSaving}>
+                {editSaving ? '저장 중…' : '저장'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 큐 저장 */}
+      <Section title="큐 저장">
+        <div className="row">
+          <input className="input" value={cueSaveName} onChange={e=>setCueSaveName(e.target.value)}
+            placeholder="1, 2, 3" onKeyDown={e=>e.key==='Enter'&&handleStoreCue()} style={{flex:1}}/>
+          <button className="btn primary" onClick={handleStoreCue}
+            disabled={!cueSaveName.trim()||saving} style={{flexShrink:0}}>
+            <Save size={13}/> {saving?'저장 중…':'저장'}
+          </button>
+        </div>
+        <div style={{fontSize:11,color:'var(--text-dim)'}}>쉼표로 구분해 여러 큐를 한 번에 저장</div>
       </Section>
 
       {/* 이펙트 */}
@@ -335,19 +464,6 @@ export default function QuickPanel({ onCueStored, onToast }) {
           <Slider label="RATE" showLabel value={strobeRate} min={1} max={20}
             onChange={setStrobeRate} onCommit={()=>applyEffect('strobe',strobeRate)}/>
         )}
-      </Section>
-
-      {/* 큐 저장 */}
-      <Section title="큐 저장">
-        <div className="row">
-          <input className="input" value={cueSaveName} onChange={e=>setCueSaveName(e.target.value)}
-            placeholder="1, 2, 3" onKeyDown={e=>e.key==='Enter'&&handleStoreCue()} style={{flex:1}}/>
-          <button className="btn primary" onClick={handleStoreCue}
-            disabled={!cueSaveName.trim()||saving} style={{flexShrink:0}}>
-            <Save size={13}/> {saving?'저장 중…':'저장'}
-          </button>
-        </div>
-        <div style={{fontSize:11,color:'var(--text-dim)'}}>쉼표로 구분해 여러 큐를 한 번에 저장</div>
       </Section>
 
     </div>

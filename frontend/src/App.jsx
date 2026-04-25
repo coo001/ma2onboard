@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import ConnectBar from './components/ConnectBar'
 import AIChat from './components/AIChat'
 import QuickPanel from './components/QuickPanel'
@@ -14,7 +14,13 @@ export default function App() {
   const [autoStatus, setAutoStatus] = useState('connecting')
   const [autoError, setAutoError] = useState('')
   const [cueRefreshKey, setCueRefreshKey] = useState(0)
+  const [presetRefreshKey, setPresetRefreshKey] = useState(0)
   const [bulkEditCueNumbers, setBulkEditCueNumbers] = useState(null)
+  const [cues, setCues] = useState([])
+  const [activePresetIds, setActivePresetIds] = useState({ colorPresetId: null, positionPresetId: null })
+  const handlePresetSelect = useCallback((ids) => {
+    setActivePresetIds(ids)
+  }, [])
   const [aiOpen, setAiOpen] = useState(true)
   const [toast, setToast] = useState(null)
   const wsRef = useRef(null)
@@ -134,17 +140,22 @@ export default function App() {
           <QuickPanel
             onCueStored={() => setCueRefreshKey(k => k + 1)}
             onToast={showToast}
+            cues={cues}
+            onPresetSelect={handlePresetSelect}
+            presetRefreshKey={presetRefreshKey}
           />
           <CuePanel
             refreshKey={cueRefreshKey}
             onBulkEdit={setBulkEditCueNumbers}
             onToast={showToast}
+            onCuesLoaded={setCues}
           />
           <AIChat
             connected={connected}
             aiOpen={aiOpen}
             onToggle={() => setAiOpen(o => !o)}
             onCueImported={() => setCueRefreshKey(k => k + 1)}
+            onPresetsCreated={() => setPresetRefreshKey(k => k + 1)}
           />
         </div>
       )}
@@ -154,6 +165,8 @@ export default function App() {
           cueNumbers={bulkEditCueNumbers}
           onClose={() => setBulkEditCueNumbers(null)}
           onSaved={() => { setBulkEditCueNumbers(null); setCueRefreshKey(k => k + 1) }}
+          colorPresetId={activePresetIds.colorPresetId}
+          positionPresetId={activePresetIds.positionPresetId}
         />
       )}
 

@@ -453,6 +453,63 @@ def apply_patches(rows: list, patches: list) -> list:
     return list(row_map.values())
 
 
+def extract_preset_candidates(rows: list) -> dict:
+    """파싱된 큐 행에서 프리셋 후보(색상/포지션)를 추출한다.
+    고유 값 기준으로 그룹핑하고 사용 빈도 순 정렬 후 최대 8개 반환."""
+    import colorsys
+
+    color_map: dict = {}     # (r,g,b) -> {"cues": [], "label": str}
+    position_map: dict = {}  # (pan,tilt,focus) -> {"cues": [], "label": str}
+
+    for row in rows:
+        cue = str(row.get("cue", "?"))
+        label = str(row.get("label") or "").strip()
+
+        color = row.get("color")
+        if isinstance(color, dict) and all(k in color for k in ("r", "g", "b")):
+            try:
+                key = (int(color["r"]), int(color["g"]), int(color["b"]))
+                if key not in color_map:
+                    color_map[key] = {"cues": [], "label": label}
+                color_map[key]["cues"].append(cue)
+            except (ValueError, TypeError):
+                pass
+
+        has_pos = any(row.get(k) is not None for k in ("pan", "tilt", "focus"))
+        if has_pos:
+            key = (row.get("pan"), row.get("tilt"), row.get("focus"))
+            if key not in position_map:
+                position_map[key] = {"cues": [], "label": label}
+            position_map[key]["cues"].append(cue)
+
+    # 빈도 내림차순 정렬, 최대 8개
+    sorted_colors = sorted(color_map.items(), key=lambda x: -len(x[1]["cues"]))[:8]
+    sorted_positions = sorted(position_map.items(), key=lambda x: -len(x[1]["cues"]))[:8]
+
+    color_candidates = []
+    for idx, ((r, g, b), info) in enumerate(sorted_colors):
+        r_f, g_f, b_f = r / 100.0, g / 100.0, b / 100.0
+        h, s, v = colorsys.rgb_to_hsv(r_f, g_f, b_f)
+        color_candidates.append({
+            "r": r, "g": g, "b": b,
+            "h": round(h * 360), "s": round(s * 100), "v": round(v * 100),
+            "cues": info["cues"],
+            "suggested_name": (info["label"] or f"색상{idx + 1}")[:20],
+        })
+
+    position_candidates = []
+    for idx, ((pan, tilt, focus), info) in enumerate(sorted_positions):
+        position_candidates.append({
+            "pan": pan if pan is not None else 50,
+            "tilt": tilt if tilt is not None else 50,
+            "zoom": focus if focus is not None else 50,
+            "cues": info["cues"],
+            "suggested_name": (info["label"] or f"포지션{idx + 1}")[:20],
+        })
+
+    return {"color": color_candidates, "position": position_candidates}
+
+
 def generate_template_xlsx(path: Path) -> None:
     wb = openpyxl.Workbook()
     ws = wb.active
