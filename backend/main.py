@@ -653,12 +653,15 @@ async def complete_cue_chat(session_id: str, req: CompleteChatRequest):
 
     sess.completed = result.get("all_resolved", False) or len(sess.issues) == 0
 
-    return {
+    response: dict = {
         "session_id": session_id,
         "next_question": result.get("next_question"),
         "all_resolved": sess.completed,
         "issues_remaining": len(sess.issues),
     }
+    if sess.completed:
+        response["suggested_presets"] = extract_preset_candidates(sess.rows)
+    return response
 
 
 @app.post("/api/cues/complete/{session_id}/apply")
@@ -1499,16 +1502,16 @@ async def create_color_preset(req: ColorPresetCreate):
     return {"ok": True, "preset": preset}
 
 class BulkPresetColorItem(BaseModel):
-    name: str
-    h: int
-    s: int
-    v: int
+    name: str = Field(min_length=1, max_length=30)
+    h: int = Field(ge=0, le=360)
+    s: int = Field(ge=0, le=100)
+    v: int = Field(ge=0, le=100)
 
 class BulkPresetPositionItem(BaseModel):
-    name: str
-    pan: int
-    tilt: int
-    zoom: int
+    name: str = Field(min_length=1, max_length=30)
+    pan: int = Field(ge=0, le=100)
+    tilt: int = Field(ge=0, le=100)
+    zoom: int = Field(ge=0, le=100)
 
 class BulkPresetCreate(BaseModel):
     color: List[BulkPresetColorItem] = []

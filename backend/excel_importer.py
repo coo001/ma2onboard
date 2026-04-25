@@ -468,7 +468,13 @@ def extract_preset_candidates(rows: list) -> dict:
         color = row.get("color")
         if isinstance(color, dict) and all(k in color for k in ("r", "g", "b")):
             try:
-                key = (int(color["r"]), int(color["g"]), int(color["b"]))
+                rv, gv, bv = int(color["r"]), int(color["g"]), int(color["b"])
+                # AI 파싱 결과가 0-255 스케일일 수 있으므로 0-100으로 정규화
+                if any(v > 100 for v in (rv, gv, bv)):
+                    rv = round(rv / 255 * 100)
+                    gv = round(gv / 255 * 100)
+                    bv = round(bv / 255 * 100)
+                key = (max(0, min(100, rv)), max(0, min(100, gv)), max(0, min(100, bv)))
                 if key not in color_map:
                     color_map[key] = {"cues": [], "label": label}
                 color_map[key]["cues"].append(cue)

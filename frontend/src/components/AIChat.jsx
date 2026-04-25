@@ -89,38 +89,46 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
   async function handleApply() {
     if (!excelSession) return
     setLoading(true)
-
-    // 선택된 프리셋 먼저 생성
-    if (presetCandidates) {
-      const toCreate = {
-        color: presetCandidates.color
-          .filter(c => c.selected && c.name.trim())
-          .map(c => ({ name: c.name.trim(), h: c.h, s: c.s, v: c.v })),
-        position: presetCandidates.position
-          .filter(p => p.selected && p.name.trim())
-          .map(p => ({ name: p.name.trim(), pan: p.pan, tilt: p.tilt, zoom: p.zoom })),
+    try {
+      // 선택된 프리셋 먼저 생성
+      if (presetCandidates) {
+        const toCreate = {
+          color: presetCandidates.color
+            .filter(c => c.selected && c.name.trim())
+            .map(c => ({ name: c.name.trim(), h: c.h, s: c.s, v: c.v })),
+          position: presetCandidates.position
+            .filter(p => p.selected && p.name.trim())
+            .map(p => ({ name: p.name.trim(), pan: p.pan, tilt: p.tilt, zoom: p.zoom })),
+        }
+        if (toCreate.color.length || toCreate.position.length) {
+          try {
+            await api.bulkCreatePresets(toCreate)
+            const total = toCreate.color.length + toCreate.position.length
+            addMsg('system-msg', `✓ 프리셋 ${total}개가 생성됐습니다.`)
+            onPresetsCreated?.()
+          } catch (e) {
+            addMsg('error-msg', `프리셋 생성 실패: ${e.message || '오류'}. 큐 저장은 계속합니다.`)
+          }
+        }
       }
-      if (toCreate.color.length || toCreate.position.length) {
-        await api.bulkCreatePresets(toCreate)
-        const total = toCreate.color.length + toCreate.position.length
-        addMsg('system-msg', `✓ 프리셋 ${total}개가 생성됐습니다.`)
-        onPresetsCreated?.()
-      }
-    }
 
-    // 큐 적용
-    const r = excelSession.sessionId
-      ? await api.applyCueSession(excelSession.sessionId, 'skip')
-      : await api.importCuesExcel(excelFile, false, 'skip')
-    setLoading(false)
-    const count = r.results?.filter(x => x.ok).length ?? '?'
-    if (r.ok !== false) {
-      addMsg('system-msg', `✓ ${count}개 큐가 저장됐습니다.`)
-      onCueImported?.()
-    } else {
-      addMsg('error-msg', r.error || '저장 실패')
+      // 큐 적용
+      const r = excelSession.sessionId
+        ? await api.applyCueSession(excelSession.sessionId, 'skip')
+        : await api.importCuesExcel(excelFile, false, 'skip')
+      const count = r.results?.filter(x => x.ok).length ?? '?'
+      if (r.ok !== false) {
+        addMsg('system-msg', `✓ ${count}개 큐가 저장됐습니다.`)
+        onCueImported?.()
+      } else {
+        addMsg('error-msg', r.error || '저장 실패')
+      }
+    } catch (e) {
+      addMsg('error-msg', `오류: ${e.message || '알 수 없는 오류'}`)
+    } finally {
+      setLoading(false)
+      setExcelSession(null); setExcelFile(null); setExcelResolved(false); setPresetCandidates(null)
     }
-    setExcelSession(null); setExcelFile(null); setExcelResolved(false); setPresetCandidates(null)
   }
 
   async function handleFile(file) {
@@ -159,7 +167,7 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
         if (r.next_question) addMsg('assistant', r.next_question)
         if (r.all_resolved) {
           setExcelResolved(true)
-          setPresetCandidates(initCandidates(excelSession.suggestedPresets))
+          setPresetCandidates(initCandidates(r.suggested_presets ?? excelSession.suggestedPresets))
           addMsg('confirm-msg', `모든 정보가 채워졌습니다. ${excelSession.filename}의 큐를 저장할까요?`)
         }
       }
