@@ -1591,8 +1591,8 @@ async def bulk_create_presets(req: BulkPresetCreate):
 
 @app.delete("/api/presets/{kind}/{preset_id}")
 async def delete_preset(kind: str, preset_id: str):
-    if kind not in ("position", "color"):
-        raise HTTPException(status_code=400, detail="kind는 position 또는 color여야 합니다.")
+    if kind not in ("position", "color", "scene"):
+        raise HTTPException(status_code=400, detail="kind는 position, color, scene 중 하나여야 합니다.")
     async with _presets_lock:
         data = _read_presets()
         before = len(data[kind])
@@ -1604,8 +1604,8 @@ async def delete_preset(kind: str, preset_id: str):
 
 @app.patch("/api/presets/{kind}/{preset_id}")
 async def rename_preset(kind: str, preset_id: str, req: PresetRename):
-    if kind not in ("position", "color"):
-        raise HTTPException(status_code=400, detail="kind는 position 또는 color여야 합니다.")
+    if kind not in ("position", "color", "scene"):
+        raise HTTPException(status_code=400, detail="kind는 position, color, scene 중 하나여야 합니다.")
     async with _presets_lock:
         data = _read_presets()
         for p in data[kind]:
