@@ -18,6 +18,7 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
     if (r.cues) {
       setCues(r.cues)
       onCuesLoaded?.(r.cues)
+      setSelectedCues(prev => new Set([...prev].filter(n => r.cues.some(c => c.number === n))))
     }
   }
 
@@ -31,7 +32,8 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
     if (sending) return
     try {
       setSending(true)
-      const fade = parseFloat(fadeTimes[num] ?? 0) || 0
+      const raw = parseFloat(fadeTimes[num] ?? 0)
+      const fade = Number.isFinite(raw) && raw >= 0 && raw <= 30 ? raw : 0
       const r = await api.executeCue(num, fade)
       if (r.ok === false) toast(r.error || '실행 실패')
       else setCurrentCue(num)

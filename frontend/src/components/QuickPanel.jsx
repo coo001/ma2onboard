@@ -452,7 +452,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
     })
 
     const failed = []
-    await Promise.all(Object.values(groups).map(async g => {
+    for (const g of Object.values(groups)) {
       try {
         await api.selectFixtures(g.ids)
         await api.intensityColor(g.intensity ?? null, null, g.color ? hsvToApi(g.color.h, g.color.s, g.color.v) : null, g.ids)
@@ -460,7 +460,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
       } catch {
         g.ids.forEach(id => failed.push(id))
       }
-    }))
+    }
 
     const okIds = new Set(p.fixtures.map(f => f.id).filter(id => !failed.includes(id)))
     const ok = p.fixtures.filter(f => okIds.has(f.id))

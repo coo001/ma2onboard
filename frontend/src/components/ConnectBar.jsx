@@ -1,19 +1,28 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sun, Moon, Off } from './Icon'
 import { api } from '../api'
 
+const ALL_FIXTURES = [1,2,3,4,5,6,7,8,9,10]
+
 export default function ConnectBar({
   connected, autoStatus, autoInfo, theme,
-  onThemeChange, onRetry, onDisconnect,
+  onThemeChange, onRetry, onDisconnect, onToast,
 }) {
   const connecting = autoStatus === 'connecting'
   const ok = connected && autoStatus === 'ok'
   const [blacked, setBlacked] = useState(false)
 
+  useEffect(() => { if (!ok) setBlacked(false) }, [ok])
+
   async function handleBlackout() {
     if (!ok) return
-    await api.intensityColor(0, null, null, [1,2,3,4,5,6,7,8,9,10])
-    setBlacked(true)
+    if (!window.confirm('전체 암전합니다. 복구는 슬라이더로 직접 해야 합니다. 계속할까요?')) return
+    try {
+      await api.intensityColor(0, null, null, ALL_FIXTURES)
+      setBlacked(true)
+    } catch {
+      onToast?.('BLACKOUT 실패 — 연결 상태를 확인하세요')
+    }
   }
 
   return (
