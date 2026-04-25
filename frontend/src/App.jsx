@@ -4,7 +4,7 @@ import AIChat from './components/AIChat'
 import QuickPanel from './components/QuickPanel'
 import CuePanel from './components/CuePanel'
 import BulkEditModal from './components/BulkEditModal'
-import { api } from './api'
+import { api, setMockMode } from './api'
 
 const AUTO = { host: '127.0.0.1', port: 30000, user: 'administrator', password: 'admin' }
 
@@ -23,6 +23,7 @@ export default function App() {
   }, [])
   const [aiOpen, setAiOpen] = useState(true)
   const [toast, setToast] = useState(null)
+  const [demoMode, setDemoMode] = useState(false)
   const wsRef = useRef(null)
 
   function showToast(msg) {
@@ -85,6 +86,23 @@ export default function App() {
 
   function handleDisconnect() { setConnected(false); setAutoStatus('error') }
 
+  function handleToggleDemo() {
+    if (demoMode) {
+      setMockMode(false)
+      setDemoMode(false)
+      setConnected(false)
+      setAutoStatus('error')
+      setAutoError('데모 모드 종료 — 아래 버튼으로 재연결하세요.')
+    } else {
+      setMockMode(true)
+      setDemoMode(true)
+      setConnected(true)
+      setAutoStatus('ok')
+      setCueRefreshKey(k => k + 1)
+      setPresetRefreshKey(k => k + 1)
+    }
+  }
+
   return (
     <div className="console" data-theme={theme}>
       <ConnectBar
@@ -96,6 +114,8 @@ export default function App() {
         onRetry={handleRetry}
         onDisconnect={handleDisconnect}
         onToast={showToast}
+        demoMode={demoMode}
+        onToggleDemo={handleToggleDemo}
       />
 
       {!connected ? (
@@ -128,9 +148,14 @@ export default function App() {
                       </>
                   }
                 </div>
-                <button className="btn primary" onClick={handleRetry} style={{ height: 38, padding: '0 28px' }}>
-                  다시 연결
-                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button className="btn primary" onClick={handleRetry} style={{ height: 38, padding: '0 28px' }}>
+                    다시 연결
+                  </button>
+                  <button className="btn ghost" onClick={handleToggleDemo} style={{ height: 38, padding: '0 20px' }}>
+                    데모 모드로 시작
+                  </button>
+                </div>
               </>
             )}
           </div>
