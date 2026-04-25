@@ -3,6 +3,8 @@ import { api } from '../api'
 import { Send, Panel, Attach } from './Icon'
 
 const EXAMPLES = [
+  '포지션이 뭐야?',
+  '큐와 프리셋 차이는?',
   '1번 조명 파란색 밝게 켜줘',
   '2번, 3번 조명 빨간색으로',
   '1,3,5번 스트로브 효과',
@@ -154,7 +156,9 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
 
   async function send() {
     const text = input.trim()
-    if (!text || loading || !connected) return
+    if (!text || loading) return
+    const isHelpQuery = /[?？]|뭐야|어떻게|뭔지|설명|의미|차이/.test(text)
+    if (!connected && !isHelpQuery) return
     setInput('')
     addMsg('user', text)
     setLoading(true)
@@ -282,13 +286,16 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
         {/* Example chips */}
         {!excelSession && (
           <div className="ai-chips">
-            {EXAMPLES.map(ex => (
-              <button key={ex} className="ai-chip"
-                onClick={() => { setInput(ex); inputRef.current?.focus() }}
-                disabled={!connected}>
-                {ex}
-              </button>
-            ))}
+            {EXAMPLES.map(ex => {
+              const isHelp = /[?？]|뭐야|어떻게|뭔지|설명|의미|차이/.test(ex)
+              return (
+                <button key={ex} className="ai-chip"
+                  onClick={() => { setInput(ex); inputRef.current?.focus() }}
+                  disabled={!connected && !isHelp}>
+                  {ex}
+                </button>
+              )
+            })}
           </div>
         )}
 
@@ -386,15 +393,15 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
             placeholder={
-              !connected ? 'grandMA2에 연결되어야 합니다' :
+              !connected ? '연결 없이도 사용법 질문은 가능합니다 (예: "큐가 뭐야?")' :
               excelSession && !excelResolved ? '누락 정보를 입력하세요…' :
               '명령 또는 질문을 입력하세요… (Enter 전송)'
             }
-            disabled={!connected || loading}
+            disabled={loading}
             rows={2}
           />
           <button className="ai-send" onClick={send}
-            disabled={!connected || loading || !input.trim()}>
+            disabled={loading || !input.trim()}>
             <Send size={16} />
           </button>
         </div>

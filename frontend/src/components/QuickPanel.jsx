@@ -102,7 +102,7 @@ function PresetChip({ preset, onApply, onUpdate, onDelete, getTip, getCueCount, 
 }
 
 // ── Preset Bank ────────────────────────────────────────────────────
-function PresetBank({ presets, onApply, onSave, onDelete, onUpdate, saveLabel = '저장', getTip, getCueCount, colorSwatch = false }) {
+function PresetBank({ presets, onApply, onSave, onDelete, onUpdate, saveLabel = '저장', getTip, getCueCount, colorSwatch = false, disableSave = false }) {
   const [adding, setAdding] = useState(false)
   const [name, setName] = useState('')
   const inputRef = useRef(null)
@@ -142,7 +142,10 @@ function PresetBank({ presets, onApply, onSave, onDelete, onUpdate, saveLabel = 
           onBlur={handleSave}
         />
       ) : (
-        <button className="preset-add-btn" onClick={() => setAdding(true)}>+ {saveLabel}</button>
+        <button className="preset-add-btn" onClick={() => setAdding(true)} disabled={disableSave}
+          title={disableSave ? '우클릭으로 채널을 먼저 선택하세요' : undefined}>
+          + {saveLabel}
+        </button>
       )}
     </div>
   )
@@ -182,10 +185,16 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
   const [fixturePositions, setFixturePositions] = useState({})
   const [fixtureColors, setFixtureColors] = useState({})
   const [fixtureIntensities, setFixtureIntensities] = useState({})
+  const [cueLabel, setCueLabel] = useState('')
   const colorDebounce = useRef(null)
 
   const [selectedColorPresetId, setSelectedColorPresetId] = useState(null)
   const [selectedPositionPresetId, setSelectedPositionPresetId] = useState(null)
+
+  // colorDebounce cleanup on unmount
+  useEffect(() => {
+    return () => { if (colorDebounce.current) clearTimeout(colorDebounce.current) }
+  }, [])
 
   // ── 프리셋 로드 ──────────────────────────────────────────────────
   useEffect(() => {
@@ -202,16 +211,20 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
 
   // ── 채널 ────────────────────────────────────────────────────────
   function toggleActive(id) {
-    const isAdding = !active.includes(id)
-    setActive(a => a.includes(id) ? a.filter(x => x !== id) : [...a, id])
-    if (isAdding) {
-      if (fixturePositions[id]) {
-        const { pan: p, tilt: t, zoom: z } = fixturePositions[id]
-        setPan(p); setTilt(t); setZoom(z)
+    let willAdd = false
+    setActive(a => {
+      if (a.includes(id)) return a.filter(x => x !== id)
+      willAdd = true
+      return [...a, id]
+    })
+    // setState가 sync하게 willAdd를 세팅한 후 다음 microtask에서 부수효과 실행
+    Promise.resolve().then(() => {
+      if (willAdd) {
+        if (fixturePositions[id]) { const { pan: p, tilt: t, zoom: z } = fixturePositions[id]; setPan(p); setTilt(t); setZoom(z) }
+        if (fixtureColors[id]) setColor(fixtureColors[id])
+        if (fixtureIntensities[id] !== undefined) setIntensity(fixtureIntensities[id])
       }
-      if (fixtureColors[id]) setColor(fixtureColors[id])
-      if (fixtureIntensities[id] !== undefined) setIntensity(fixtureIntensities[id])
-    }
+    })
   }
   const toggleSelected = (id) => setSelected(s => s.includes(id) ? s.filter(x=>x!==id) : [...s,id])
   const selectAll = () => setActive(Array.from({length:CHANNEL_COUNT},(_,i)=>i+1))
@@ -308,7 +321,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
           const r = await api.storeCue(n)
           if (!r || r.ok === false) { failed.push(n); continue }
         }
-        const ar = await api.addCue(n)
+        const ar = await api.addCue(n, cueLabel.trim())
         if (ar && ar.ok === false && ar.status !== 409) failed.push(n)
       } catch (e) {
         failed.push(n)
@@ -316,7 +329,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
     }
     setSaving(false)
     if (failed.length) onToast?.(`큐 ${failed.join(', ')} 저장 실패`)
-    else { onToast?.(`큐 ${nums.join(', ')} 저장 완료`); onCueStored?.(); setCueSaveName('') }
+    else { onToast?.(`큐 ${nums.join(', ')} 저장 완료`); onCueStored?.(); setCueSaveName(''); setCueLabel('') }
   }
 
   // ── 포지션 프리셋 ─────────────────────────────────────────────────
@@ -502,6 +515,12 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
           <div className="grow" />
           <button className="btn sm danger" onClick={handleClear}>전체 끄기</button>
         </div>
+
+        {active.length === 0 && (
+          <div style={{ fontSize:11, color:'var(--text-dim)', textAlign:'center', padding:'6px 0', background:'var(--bg-elev-2)', borderRadius:'var(--radius-sm)', marginBottom:4 }}>
+            채널을 클릭해서 선택하면 슬라이더가 활성화됩니다
+          </div>
+        )}
       </div>
 
       {/* ── Single scrollable body — all sections visible ── */}
@@ -515,7 +534,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
 
         {/* 밝기 */}
         <div className="qp-block-compact">
-          <Slider value={intensity} onChange={setIntensity} onCommit={() => applyIntensity(intensity)} hero />
+          <Slider value={intensity} onChange={setIntensity} onCommit={() => applyIntensity(intensity)} hero disabled={active.length === 0} />
         </div>
 
         {/* 포지션 + 색상 — side by side */}
@@ -528,13 +547,13 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
               ['TILT', tilt, handleTiltChange],
               ['ZOOM', zoom, handleZoomChange],
             ].map(([label, value, set]) => (
-              <Slider key={label} label={label} showLabel value={value} onChange={set} onCommit={applyPosition} />
+              <Slider key={label} label={label} showLabel value={value} onChange={set} onCommit={applyPosition} disabled={active.length === 0} />
             ))}
           </div>
           {/* 색상 */}
           <div className="qp-col-block">
             <div className="qp-col-label">색상</div>
-            <ColorPicker color={color} onChange={handleColorChange} />
+            <ColorPicker color={color} onChange={active.length === 0 ? () => {} : handleColorChange} />
           </div>
         </div>
 
@@ -615,6 +634,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
               onDelete={deleteScenePreset}
               saveLabel="저장"
               getTip={p => `조명 ${p.fixtures.map(f => f.id).join(', ')}번`}
+              disableSave={selected.length === 0}
             />
           </div>
         </div>
@@ -684,6 +704,13 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
               <Save size={13} /> {saving ? '…' : '저장'}
             </button>
           </div>
+          <input
+            className="input"
+            value={cueLabel}
+            onChange={e => setCueLabel(e.target.value)}
+            placeholder="레이블 (선택, 예: 오프닝)"
+            style={{ flex: 1, marginTop: 4 }}
+          />
         </div>
 
       </div>
