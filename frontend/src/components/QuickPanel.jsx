@@ -443,17 +443,27 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
     onToast?.(`씬 프리셋 "${name}" 저장됨`)
   }
   async function applyScenePreset(p) {
+    // 동일한 (intensity, color, pan, tilt, zoom) 값끼리 그룹화해 배치 호출 수 감소
+    const groups = {}
+    p.fixtures.forEach(f => {
+      const key = `${f.intensity}_${f.color?.h}_${f.color?.s}_${f.color?.v}_${f.pan}_${f.tilt}_${f.zoom}`
+      if (!groups[key]) groups[key] = { ...f, ids: [] }
+      groups[key].ids.push(f.id)
+    })
+
     const failed = []
-    for (const f of p.fixtures) {
+    await Promise.all(Object.values(groups).map(async g => {
       try {
-        await api.selectFixtures([f.id])
-        await api.intensityColor(f.intensity ?? null, null, f.color ? hsvToApi(f.color.h, f.color.s, f.color.v) : null, [f.id])
-        if (f.pan !== undefined) await api.position(f.pan, f.tilt, f.zoom, [f.id])
+        await api.selectFixtures(g.ids)
+        await api.intensityColor(g.intensity ?? null, null, g.color ? hsvToApi(g.color.h, g.color.s, g.color.v) : null, g.ids)
+        if (g.pan !== undefined) await api.position(g.pan, g.tilt, g.zoom, g.ids)
       } catch {
-        failed.push(f.id)
+        g.ids.forEach(id => failed.push(id))
       }
-    }
-    const ok = p.fixtures.filter(f => !failed.includes(f.id))
+    }))
+
+    const okIds = new Set(p.fixtures.map(f => f.id).filter(id => !failed.includes(id)))
+    const ok = p.fixtures.filter(f => okIds.has(f.id))
     if (ok.length) {
       setFixtureIntensities(prev => { const n = { ...prev }; ok.forEach(f => { if (f.intensity !== undefined) n[f.id] = f.intensity }); return n })
       setFixtureColors(prev => { const n = { ...prev }; ok.forEach(f => { if (f.color) n[f.id] = f.color }); return n })

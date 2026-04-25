@@ -89,6 +89,8 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
   }
 
   const playing = currentCue
+  const currentCueIdx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
+  const nextCue = currentCueIdx >= 0 && currentCueIdx < cues.length - 1 ? cues[currentCueIdx + 1] : null
 
   return (
     <div className="col cp-mini">
@@ -97,6 +99,16 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
         <span className="cp-mini-title">CUE</span>
         <span className="cue-count">{cues.length}</span>
         <div className="grow" />
+        {selectedCues.size > 0 && (
+          <button
+            className="btn sm primary"
+            style={{ fontSize: 10, padding: '2px 8px' }}
+            onClick={() => onBulkEdit?.([...selectedCues])}
+            title="선택된 큐 일괄 편집"
+          >
+            선택 편집 ({selectedCues.size})
+          </button>
+        )}
         <button
           className="btn sm ghost cp-mini-sync"
           onClick={handleReconcile}
@@ -115,8 +127,18 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
         {cues.map(cue => {
           const isPlaying = currentCue === cue.number
           const editing = labelDraft?.num === cue.number
+          const isChecked = selectedCues.has(cue.number)
           return (
             <div key={cue.number} className={`cp-mini-row${isPlaying ? ' playing' : ''}`}>
+              {/* Checkbox */}
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => toggleSelect(cue.number)}
+                style={{ width: 13, height: 13, flexShrink: 0, accentColor: 'var(--accent)', cursor: 'pointer' }}
+                title="선택"
+              />
+
               {/* Number */}
               <span className="cp-mini-num">#{cue.number}</span>
 
@@ -143,6 +165,20 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
                 )}
               </div>
 
+              {/* Fade input */}
+              <input
+                type="number"
+                className="cue-delay"
+                value={fadeTimes[cue.number] ?? 0}
+                min={0}
+                max={30}
+                step={0.5}
+                onChange={e => setFadeTimes(prev => ({ ...prev, [cue.number]: e.target.value }))}
+                title="페이드 시간(초)"
+                style={{ width: 38 }}
+              />
+              <span className="cue-delay-unit">s</span>
+
               {/* GO */}
               <button
                 className="btn sm go cp-mini-go"
@@ -165,7 +201,7 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
         })}
       </div>
 
-      {/* Footer — prev/next only */}
+      {/* Footer — live / next preview / prev / next */}
       <div className="cp-mini-footer">
         <div className="cp-mini-live">
           {playing
@@ -173,6 +209,11 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
             : <span style={{ color: 'var(--text-dim)' }}>대기</span>
           }
         </div>
+        {nextCue && (
+          <span style={{ fontSize: 10, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}>
+            NEXT → {nextCue.number}{nextCue.label ? ` ${nextCue.label}` : ''}
+          </span>
+        )}
         <button className="btn sm ghost" onClick={handlePrev} disabled={!cues.length || sending}>
           <Prev size={11} />
         </button>
