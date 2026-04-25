@@ -290,15 +290,15 @@ class FixtureSelectRequest(BaseModel):
 
 
 class IntensityColorRequest(BaseModel):
-    intensity: int
+    intensity: Optional[int] = None
     color_preset: Optional[str] = None
     color_rgb: Optional[dict] = None
     fixture_numbers: Optional[List[int]] = None
 
 
 class PositionRequest(BaseModel):
-    pan: int
-    tilt: int
+    pan: Optional[int] = None
+    tilt: Optional[int] = None
     focus: Optional[int] = None
     fixture_numbers: Optional[List[int]] = None
 
@@ -1042,7 +1042,9 @@ async def wizard_select_fixtures(req: FixtureSelectRequest):
 
 @app.post("/api/wizard/intensity-color")
 async def wizard_intensity_color(req: IntensityColorRequest):
-    commands = [cmd_intensity(req.intensity)]
+    commands = []
+    if req.intensity is not None:
+        commands.append(cmd_intensity(req.intensity))
 
     if req.color_preset and req.color_preset in COLOR_PRESETS:
         commands.extend(cmd_color_preset(req.color_preset))
@@ -1055,31 +1057,45 @@ async def wizard_intensity_color(req: IntensityColorRequest):
             )
         )
 
+    if not commands:
+        return {"ok": False, "error": "intensity 또는 color 중 하나는 필요합니다."}
+
     results = await send_commands(commands)
 
     if req.fixture_numbers:
-        state_update: dict = {"intensity": req.intensity}
+        state_update: dict = {}
+        if req.intensity is not None:
+            state_update["intensity"] = req.intensity
         if req.color_preset and req.color_preset in COLOR_PRESETS:
             rgb = COLOR_PRESETS[req.color_preset]
             state_update["color"] = {"r": rgb[0], "g": rgb[1], "b": rgb[2]}
         elif req.color_rgb:
             state_update["color"] = req.color_rgb
-        ai_update(req.fixture_numbers, state_update)
+        if state_update:
+            ai_update(req.fixture_numbers, state_update)
 
     return summarize_results(results)
 
 
 @app.post("/api/wizard/position")
 async def wizard_position(req: PositionRequest):
-    commands = [cmd_pan(req.pan), cmd_tilt(req.tilt)]
+    commands = []
+    if req.pan is not None:
+        commands.append(cmd_pan(req.pan))
+    if req.tilt is not None:
+        commands.append(cmd_tilt(req.tilt))
     if req.focus is not None:
         commands.append(cmd_focus(req.focus))
+    if not commands:
+        return {"ok": False, "error": "pan, tilt, focus 중 하나는 필요합니다."}
     results = await send_commands(commands)
     if req.fixture_numbers:
-        state_update: dict = {"pan": req.pan, "tilt": req.tilt}
-        if req.focus is not None:
-            state_update["focus"] = req.focus
-        ai_update(req.fixture_numbers, state_update)
+        state_update: dict = {}
+        if req.pan is not None: state_update["pan"] = req.pan
+        if req.tilt is not None: state_update["tilt"] = req.tilt
+        if req.focus is not None: state_update["focus"] = req.focus
+        if state_update:
+            ai_update(req.fixture_numbers, state_update)
     return summarize_results(results)
 
 

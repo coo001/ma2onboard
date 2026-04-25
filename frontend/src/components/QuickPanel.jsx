@@ -144,6 +144,8 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
   const [strobeRate, setStrobeRate] = useState(4)
   const [cueSaveName, setCueSaveName] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveMode, setSaveMode] = useState('all') // 'all' | 'selected' | 'selective'
+  const [saveAttrs, setSaveAttrs] = useState({ intensity: true, color: true, position: true, focus: true })
   const [posPresets, setPosPresets] = useState([])
   const [colPresets, setColPresets] = useState([])
   const colorDebounce = useRef(null)
@@ -209,13 +211,51 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
   async function handleStoreCue() {
     const nums = cueSaveName.split(/[\s,]+/).map(n=>n.trim()).filter(n=>/^\d+(\.\d+)?$/.test(n))
     if (!nums.length) { onToast?.('유효한 큐 번호를 입력하세요'); return }
+    if (saveMode !== 'all' && !selected.length) { onToast?.('채널을 먼저 선택하세요'); return }
+    if (saveMode === 'selective' && !Object.values(saveAttrs).some(v => v)) {
+      onToast?.('저장할 속성을 선택하세요'); return
+    }
     setSaving(true)
     const failed = []
     for (const n of nums) {
-      const r = await api.storeCue(n)
-      if (!r||r.ok===false) { failed.push(n); continue }
-      const ar = await api.addCue(n)
-      if (ar&&ar.ok===false&&ar.status!==409) failed.push(n)
+      try {
+        if (saveMode === 'all') {
+          const r = await api.storeCue(n)
+          if (!r || r.ok === false) { failed.push(n); continue }
+        } else {
+          // 프로그래머 초기화 후 선택 조명/속성만 설정
+          await api.clear()
+          await api.selectFixtures(selected)
+          if (saveMode === 'selected') {
+            await api.intensityColor(intensity, null, hsvToApi(color.h, color.s, color.v), selected)
+            await api.position(pan, tilt, zoom, selected)
+          } else {
+            // selective: 체크된 속성만
+            if (saveAttrs.intensity || saveAttrs.color) {
+              await api.intensityColor(
+                saveAttrs.intensity ? intensity : null,
+                null,
+                saveAttrs.color ? hsvToApi(color.h, color.s, color.v) : null,
+                selected
+              )
+            }
+            if (saveAttrs.position || saveAttrs.focus) {
+              await api.position(
+                saveAttrs.position ? pan : null,
+                saveAttrs.position ? tilt : null,
+                saveAttrs.focus ? zoom : null,
+                selected
+              )
+            }
+          }
+          const r = await api.storeCue(n)
+          if (!r || r.ok === false) { failed.push(n); continue }
+        }
+        const ar = await api.addCue(n)
+        if (ar && ar.ok === false && ar.status !== 409) failed.push(n)
+      } catch (e) {
+        failed.push(n)
+      }
     }
     setSaving(false)
     if (failed.length) onToast?.(`큐 ${failed.join(', ')} 저장 실패`)
@@ -382,6 +422,33 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
 
       {/* 큐 저장 */}
       <Section title="큐 저장">
+        {/* 저장 모드 선택 */}
+        <div className="segmented" style={{ marginBottom: 8 }}>
+          {[['all','전체'],['selected','선택 조명'],['selective','선택 속성']].map(([k,l]) => (
+            <button key={k} className={saveMode===k?'active':''} onClick={() => setSaveMode(k)}>{l}</button>
+          ))}
+        </div>
+
+        {/* 선택 조명 경고 */}
+        {saveMode !== 'all' && selected.length === 0 && (
+          <div style={{ fontSize: 11, color: 'var(--status-danger)', marginBottom: 6 }}>
+            위 채널 그리드에서 조명을 선택하세요
+          </div>
+        )}
+
+        {/* 선택 속성 체크박스 */}
+        {saveMode === 'selective' && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+            {[['intensity','조도'],['color','색상'],['position','위치(P/T)'],['focus','포커스']].map(([k,l]) => (
+              <label key={k} style={{ fontSize: 11, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                <input type="checkbox" checked={saveAttrs[k]}
+                  onChange={e => setSaveAttrs(p => ({ ...p, [k]: e.target.checked }))} />
+                {l}
+              </label>
+            ))}
+          </div>
+        )}
+
         <div className="row">
           <input className="input" value={cueSaveName} onChange={e=>setCueSaveName(e.target.value)}
             placeholder="1, 2, 3" onKeyDown={e=>e.key==='Enter'&&handleStoreCue()} style={{flex:1}}/>
