@@ -11,6 +11,9 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
   const [labelDraft, setLabelDraft] = useState(null)
   const [tab, setTab] = useState('sequence')
   const [reconciling, setReconciling] = useState(false)
+  const [saveName, setSaveName] = useState('')
+  const [saveLabel, setSaveLabel] = useState('')
+  const [saving, setSaving] = useState(false)
   const labelRef = useRef(null)
 
   async function loadCues() {
@@ -64,6 +67,22 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
     const r = await api.renameCue(draft.num, draft.value)
     if (r.ok === false) toast(r.error || '이름 변경 실패')
     else loadCues()
+  }
+
+  async function handleSaveCue() {
+    const nums = saveName.split(/[\s,]+/).map(n => n.trim()).filter(n => /^\d+(\.\d+)?$/.test(n))
+    if (!nums.length) { toast('유효한 큐 번호를 입력하세요'); return }
+    setSaving(true)
+    for (const n of nums) {
+      try {
+        await api.storeCue(n)
+        await api.addCue(n, nums.length === 1 ? saveLabel.trim() : '')
+      } catch { toast(`큐 ${n} 저장 실패`) }
+    }
+    setSaving(false)
+    setSaveName(''); setSaveLabel('')
+    loadCues()
+    toast(`큐 ${nums.join(', ')} 저장됨`)
   }
 
   async function handleReconcile() {
@@ -130,6 +149,30 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
           title="MA2 동기화"
         >
           <Undo size={12} />
+        </button>
+      </div>
+
+      {/* 큐 저장 바 */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        padding: '6px 8px', borderBottom: '1px solid var(--border)',
+        flexShrink: 0, background: 'var(--bg-elev)',
+      }}>
+        <input
+          className="input" value={saveName}
+          onChange={e => setSaveName(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSaveCue()}
+          placeholder="큐 번호 (예: 1, 2)" style={{ flex: '0 0 100px', fontSize: 11, height: 26 }}
+        />
+        <input
+          className="input" value={saveLabel}
+          onChange={e => setSaveLabel(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSaveCue()}
+          placeholder="레이블 (선택)" style={{ flex: 1, fontSize: 11, height: 26 }}
+        />
+        <button className="btn sm primary" onClick={handleSaveCue}
+          disabled={!saveName.trim() || saving} style={{ flexShrink: 0, height: 26, padding: '0 10px', fontSize: 11 }}>
+          {saving ? '…' : '저장'}
         </button>
       </div>
 
