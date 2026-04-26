@@ -90,6 +90,18 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
     handleExecute(cues[idx >= cues.length - 1 ? 0 : idx + 1].number)
   }
 
+  useEffect(() => {
+    function onKey(e) {
+      if (e.code !== 'Space') return
+      const tag = e.target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return
+      e.preventDefault()
+      handleNext()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cues, currentCue, sending])
+
   const playing = currentCue
   const currentCueIdx = currentCue != null ? cues.findIndex(c => c.number === currentCue) : -1
   const nextCue = currentCueIdx >= 0 && currentCueIdx < cues.length - 1 ? cues[currentCueIdx + 1] : null
@@ -220,7 +232,7 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
         <button className="cp-mini-prev-btn" onClick={handlePrev} disabled={!cues.length || sending} title="이전 큐">
           <Prev size={13} />
         </button>
-        <button className="cp-mini-next-btn" onClick={handleNext} disabled={!cues.length || sending} title="다음 큐 실행">
+        <button className="cp-mini-next-btn" onClick={handleNext} disabled={!cues.length || sending} title="다음 큐 실행 (Space)">
           <Next size={15} />
         </button>
       </div>
