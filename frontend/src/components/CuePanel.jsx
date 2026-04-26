@@ -133,6 +133,23 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
         </button>
       </div>
 
+      {/* Column headers */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 5,
+        padding: '3px 8px', borderBottom: '1px solid var(--border)',
+        background: 'var(--bg-elev)', flexShrink: 0,
+        fontSize: 9, fontWeight: 700, color: 'var(--text-dim)',
+        letterSpacing: '0.07em', textTransform: 'uppercase',
+        fontFamily: 'var(--font-mono)',
+      }}>
+        <span style={{ width: 13, flexShrink: 0 }} />
+        <span style={{ width: 30, flexShrink: 0 }}>No.</span>
+        <span style={{ flex: 1 }}>레이블</span>
+        <span style={{ width: 34, flexShrink: 0, textAlign: 'center' }}>페이드</span>
+        <span style={{ width: 20, flexShrink: 0 }} />
+        <span style={{ width: 44, flexShrink: 0, textAlign: 'center' }}>실행</span>
+      </div>
+
       {/* Cue list */}
       <div className="cue-list cp-mini-list">
         {cues.length === 0 && (
