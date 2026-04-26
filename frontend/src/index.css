@@ -642,12 +642,21 @@ html, body, #root { height: 100%; overflow: hidden; }
 }
 .cp-mini-row.playing { background: var(--accent-soft); }
 .cp-mini-row:hover:not(.playing) { background: var(--surface-hover); }
-.cp-mini-num { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-dim); flex-shrink: 0; min-width: 26px; }
+.cp-mini-num { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--text-dim); flex-shrink: 0; width: 30px; }
 .cp-mini-label-wrap { flex: 1; min-width: 0; overflow: hidden; }
 .cp-mini-label { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; display: block; }
 .cp-mini-label.dim { color: var(--text-dim); }
 .cp-mini-edit { width: 100%; font-size: 11px; background: var(--bg-elev-2); border: 1px solid var(--accent); border-radius: 3px; color: var(--text); padding: 1px 4px; outline: none; }
-.cp-mini-go { flex-shrink: 0; padding: 2px 7px !important; font-size: 10px !important; font-weight: 800; letter-spacing: 0.05em; height: auto !important; }
+.cp-mini-go {
+  flex-shrink: 0; width: 44px; height: 26px;
+  background: var(--accent); color: #000;
+  border: none; border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 900;
+  letter-spacing: 0.06em; cursor: pointer;
+  transition: opacity 0.12s var(--ease);
+}
+.cp-mini-go:hover { opacity: 0.85; }
+.cp-mini-go:disabled { opacity: 0.35; cursor: not-allowed; }
 .cp-mini-del { flex-shrink: 0; width: 20px; height: 20px; padding: 0 !important; display: grid; place-items: center; }
 .cp-mini-sync { width: 26px; height: 26px; padding: 0 !important; display: grid; place-items: center; }
 .cp-mini-footer {

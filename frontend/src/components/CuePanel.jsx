@@ -177,18 +177,8 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
                 step={0.5}
                 onChange={e => setFadeTimes(prev => ({ ...prev, [cue.number]: e.target.value }))}
                 title="페이드 시간(초)"
-                style={{ width: 38 }}
               />
               <span className="cue-delay-unit">s</span>
-
-              {/* GO */}
-              <button
-                className="btn sm go cp-mini-go"
-                onClick={() => handleExecute(cue.number)}
-                disabled={sending}
-              >
-                GO
-              </button>
 
               {/* Delete */}
               <button
@@ -197,6 +187,15 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
                 title="삭제"
               >
                 <X size={10} />
+              </button>
+
+              {/* GO — 항상 맨 오른쪽 */}
+              <button
+                className="cp-mini-go"
+                onClick={() => handleExecute(cue.number)}
+                disabled={sending}
+              >
+                GO
               </button>
             </div>
           )
