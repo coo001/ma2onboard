@@ -202,24 +202,26 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
         })}
       </div>
 
-      {/* Footer — live / next preview / prev / next */}
+      {/* Footer */}
       <div className="cp-mini-footer">
-        <div className="cp-mini-live">
-          {playing
-            ? <><span className="cp-mini-live-dot" />#{playing}</>
-            : <span style={{ color: 'var(--text-dim)' }}>대기</span>
-          }
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div className="cp-mini-live">
+            {playing
+              ? <><span className="cp-mini-live-dot" />#{playing}</>
+              : <span style={{ color: 'var(--text-dim)' }}>대기</span>
+            }
+          </div>
+          {nextCue && (
+            <span style={{ fontSize: 9, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              NEXT {nextCue.number}{nextCue.label ? ` ${nextCue.label}` : ''}
+            </span>
+          )}
         </div>
-        {nextCue && (
-          <span style={{ fontSize: 10, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 90 }}>
-            NEXT → {nextCue.number}{nextCue.label ? ` ${nextCue.label}` : ''}
-          </span>
-        )}
-        <button className="btn sm ghost" onClick={handlePrev} disabled={!cues.length || sending}>
-          <Prev size={11} />
+        <button className="cp-mini-prev-btn" onClick={handlePrev} disabled={!cues.length || sending} title="이전 큐">
+          <Prev size={13} />
         </button>
-        <button className="btn sm primary" onClick={handleNext} disabled={!cues.length || sending}>
-          <Next size={11} />
+        <button className="cp-mini-next-btn" onClick={handleNext} disabled={!cues.length || sending} title="다음 큐 실행">
+          <Next size={15} />
         </button>
       </div>
     </div>
