@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, createPortal } from 'react'
 import { api, updatePresetValues } from '../api'
 import Section from './Section'
 import Slider from './Slider'
@@ -136,7 +136,7 @@ function PresetBank({ presets, onApply, onSave, onDelete, onUpdate, saveLabel = 
 // ── Main Component ─────────────────────────────────────────────────
 const CHANNEL_COUNT = 10
 
-export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSelect, presetRefreshKey }) {
+export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSelect, presetRefreshKey, cueSaveSlot }) {
   // active = 좌클릭 (실시간 제어), selected = 우클릭 (저장용)
   const [active, setActive] = useState([])
   const [selected, setSelected] = useState([])
@@ -451,7 +451,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
     }
   }
 
-  return (
+  return (<>
     <div className="col" style={{ overflowY: 'auto' }}>
 
       {/* 채널 */}
@@ -605,53 +605,6 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
         />
       </Section>
 
-      {/* 큐 저장 */}
-      <Section title="큐 저장">
-        {/* 저장 모드 선택 */}
-        <div className="segmented" style={{ marginBottom: 8 }}>
-          {[['all','전체'],['selected','선택 조명'],['selective','선택 속성']].map(([k,l]) => (
-            <button key={k} className={saveMode===k?'active':''} onClick={() => setSaveMode(k)}>{l}</button>
-          ))}
-        </div>
-
-        {/* 선택 조명 경고 */}
-        {saveMode !== 'all' && selected.length === 0 && (
-          <div style={{ fontSize: 11, color: 'var(--status-danger)', marginBottom: 6 }}>
-            위 채널 그리드에서 조명을 우클릭으로 선택하세요
-          </div>
-        )}
-
-        {/* 선택 속성 체크박스 */}
-        {saveMode === 'selective' && (
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-            {[['intensity','조도'],['color','색상'],['position','위치(P/T)'],['focus','포커스']].map(([k,l]) => (
-              <label key={k} style={{ fontSize: 11, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>
-                <input type="checkbox" checked={saveAttrs[k]}
-                  onChange={e => setSaveAttrs(p => ({ ...p, [k]: e.target.checked }))} />
-                {l}
-              </label>
-            ))}
-          </div>
-        )}
-
-        <div className="row">
-          <input className="input" value={cueSaveName} onChange={e=>setCueSaveName(e.target.value)}
-            placeholder="1, 2, 3" onKeyDown={e=>e.key==='Enter'&&handleStoreCue()} style={{flex:1}}/>
-          <button className="btn primary" onClick={handleStoreCue}
-            disabled={!cueSaveName.trim()||saving} style={{flexShrink:0}}>
-            <Save size={13}/> {saving?'저장 중…':'저장'}
-          </button>
-        </div>
-        <input className="input" value={cueLabel} onChange={e=>setCueLabel(e.target.value)}
-          placeholder="레이블 (선택, 예: 오프닝)" style={{flex:1, marginTop:4}}/>
-        {cueLabel && cueSaveName.includes(',') && (
-          <div style={{fontSize:10,color:'var(--text-dim)',marginTop:2}}>
-            여러 큐에 같은 레이블이 모두 적용됩니다
-          </div>
-        )}
-        <div style={{fontSize:11,color:'var(--text-dim)'}}>쉼표로 구분해 여러 큐를 한 번에 저장</div>
-      </Section>
-
       {/* 이펙트 */}
       <Section title="이펙트">
         <div className="segmented">
@@ -668,5 +621,51 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
       </Section>
 
     </div>
-  )
+
+    {/* 큐 저장 — CuePanel 상단 슬롯으로 portal */}
+    {cueSaveSlot && createPortal(
+      <div style={{ borderBottom: '1px solid var(--border)' }}>
+        <Section title="큐 저장">
+          <div className="segmented" style={{ marginBottom: 8 }}>
+            {[['all','전체'],['selected','선택 조명'],['selective','선택 속성']].map(([k,l]) => (
+              <button key={k} className={saveMode===k?'active':''} onClick={() => setSaveMode(k)}>{l}</button>
+            ))}
+          </div>
+          {saveMode !== 'all' && selected.length === 0 && (
+            <div style={{ fontSize: 11, color: 'var(--status-danger)', marginBottom: 6 }}>
+              채널을 <strong>우클릭</strong>해서 저장할 조명을 선택하세요
+            </div>
+          )}
+          {saveMode === 'selective' && (
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+              {[['intensity','조도'],['color','색상'],['position','위치(P/T)'],['focus','포커스']].map(([k,l]) => (
+                <label key={k} style={{ fontSize: 11, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                  <input type="checkbox" checked={saveAttrs[k]}
+                    onChange={e => setSaveAttrs(p => ({ ...p, [k]: e.target.checked }))} />
+                  {l}
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="row">
+            <input className="input" value={cueSaveName} onChange={e=>setCueSaveName(e.target.value)}
+              placeholder="1, 2, 3" onKeyDown={e=>e.key==='Enter'&&handleStoreCue()} style={{flex:1}}/>
+            <button className="btn primary" onClick={handleStoreCue}
+              disabled={!cueSaveName.trim()||saving} style={{flexShrink:0}}>
+              <Save size={13}/> {saving?'저장 중…':'저장'}
+            </button>
+          </div>
+          <input className="input" value={cueLabel} onChange={e=>setCueLabel(e.target.value)}
+            placeholder="레이블 (선택, 예: 오프닝)" style={{flex:1, marginTop:4}}/>
+          {cueLabel && cueSaveName.includes(',') && (
+            <div style={{fontSize:10,color:'var(--text-dim)',marginTop:2}}>
+              여러 큐에 같은 레이블이 모두 적용됩니다
+            </div>
+          )}
+          <div style={{fontSize:11,color:'var(--text-dim)'}}>쉼표로 구분해 여러 큐를 한 번에 저장</div>
+        </Section>
+      </div>,
+      cueSaveSlot
+    )}
+  </>)
 }

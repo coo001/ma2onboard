@@ -24,6 +24,7 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(true)
   const [toast, setToast] = useState(null)
   const [demoMode, setDemoMode] = useState(false)
+  const [cueSaveSlot, setCueSaveSlot] = useState(null)
   const wsRef = useRef(null)
 
   function showToast(msg) {
@@ -168,12 +169,14 @@ export default function App() {
             cues={cues}
             onPresetSelect={handlePresetSelect}
             presetRefreshKey={presetRefreshKey}
+            cueSaveSlot={cueSaveSlot}
           />
           <CuePanel
             refreshKey={cueRefreshKey}
             onBulkEdit={setBulkEditCueNumbers}
             onToast={showToast}
             onCuesLoaded={setCues}
+            onSaveSlotReady={setCueSaveSlot}
           />
           <AIChat
             connected={connected}
