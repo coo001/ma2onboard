@@ -26,6 +26,7 @@ export default function App() {
   const [demoMode, setDemoMode] = useState(false)
   const [cueSaveSlot, setCueSaveSlot] = useState(null)
   const wsRef = useRef(null)
+  const demoRef = useRef(false)  // WebSocket 클로저에서 최신 demoMode 참조용
 
   function showToast(msg) {
     setToast(msg)
@@ -53,6 +54,7 @@ export default function App() {
       const ws = new WebSocket(`${protocol}//${location.host}/ws/log`)
       wsRef.current = ws
       ws.onmessage = (e) => {
+        if (demoRef.current) return  // 데모 모드에서는 WS 메시지 무시
         const msg = JSON.parse(e.data)
         if (msg.type === 'connection') setConnected(msg.connected)
         else if (msg.type === 'bridge_status') {
@@ -89,12 +91,14 @@ export default function App() {
 
   function handleToggleDemo() {
     if (demoMode) {
+      demoRef.current = false
       setMockMode(false)
       setDemoMode(false)
       setConnected(false)
       setAutoStatus('error')
       setAutoError('데모 모드 종료 — 아래 버튼으로 재연결하세요.')
     } else {
+      demoRef.current = true
       setMockMode(true)
       setDemoMode(true)
       setConnected(true)
