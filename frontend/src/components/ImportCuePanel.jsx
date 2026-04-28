@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { api } from '../api'
 
+function rgbScaleToHex(r, g, b) {
+  return '#' + [r, g, b].map(v => Math.round(v / 100 * 255).toString(16).padStart(2, '0')).join('')
+}
+
 const s = {
   wrap: { padding: '32px 40px' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 },
@@ -66,6 +70,27 @@ const s = {
     flex: 1, background: '#1a1d27', border: '1px solid #3a3f5c', borderRadius: 8,
     color: '#e8eaf0', padding: '8px 12px', fontSize: 13, outline: 'none',
   },
+  presetOfferWrap: {
+    background: '#111a14', border: '1px solid #3ddc8466', borderRadius: 14,
+    padding: '20px 24px', marginBottom: 16,
+  },
+  presetOfferTitle: { fontSize: 15, fontWeight: 800, color: '#3ddc84', marginBottom: 4 },
+  presetOfferSub: { fontSize: 12, color: '#7a7f9a', marginBottom: 14 },
+  presetItem: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '8px 0', borderBottom: '1px solid #1e2130',
+  },
+  presetSwatch: { width: 18, height: 18, borderRadius: 4, flexShrink: 0, border: '1px solid #3a3f5c' },
+  presetTypeBadge: { fontSize: 10, fontWeight: 700, color: '#7a7f9a', minWidth: 38 },
+  presetNameInput: {
+    background: '#1a1d27', border: '1px solid #3a3f5c', borderRadius: 6,
+    color: '#e8eaf0', padding: '4px 8px', fontSize: 13, width: 150, outline: 'none',
+  },
+  presetItemMeta: { fontSize: 10, color: '#5a5f7a', flex: 1 },
+  presetDoneBanner: {
+    background: '#0d2a1a', border: '1px solid #3ddc84', borderRadius: 10,
+    padding: '12px 16px', color: '#3ddc84', fontWeight: 700, fontSize: 13, marginBottom: 16,
+  },
   resolvedBanner: {
     background: '#0d2a1a', border: '1px solid #3ddc84', borderRadius: 10,
     padding: '12px 16px', color: '#3ddc84', fontWeight: 700, fontSize: 13, marginBottom: 12,
@@ -85,6 +110,11 @@ export default function ImportCuePanel({ onClose, onImported }) {
   const [chatInput, setChatInput] = useState('')
   const [chatResolved, setChatResolved] = useState(false)
   const [chatLoading, setChatLoading] = useState(false)
+
+  const [suggestedPresets, setSuggestedPresets] = useState(null)
+  const [presetSelections, setPresetSelections] = useState([])
+  const [presetCreating, setPresetCreating] = useState(false)
+  const [presetDone, setPresetDone] = useState(null)
 
   const fileInputRef = useRef(null)
   const chatLogRef = useRef(null)
@@ -107,6 +137,46 @@ export default function ImportCuePanel({ onClose, onImported }) {
     setChatSession(null)
     setChatMessages([])
     setChatResolved(false)
+  }
+
+  function initPresetOffer(suggested) {
+    const colors = (suggested?.color || [])
+    const positions = (suggested?.position || [])
+    if (!colors.length && !positions.length) return
+    const selections = [
+      ...colors.map((c, i) => ({ type: 'color', idx: i, selected: true, name: c.suggested_name || `색상${i + 1}`, data: c })),
+      ...positions.map((p, i) => ({ type: 'position', idx: i, selected: true, name: p.suggested_name || `포지션${i + 1}`, data: p })),
+    ]
+    setSuggestedPresets(suggested)
+    setPresetSelections(selections)
+    setPresetDone(null)
+  }
+
+  async function handleCreatePresets() {
+    const chosen = presetSelections.filter(sel => sel.selected)
+    if (!chosen.length) { setSuggestedPresets(null); return }
+    const colorItems = chosen
+      .filter(sel => sel.type === 'color')
+      .map(sel => ({ name: sel.name.trim() || sel.data.suggested_name, h: sel.data.h, s: sel.data.s, v: sel.data.v }))
+    const positionItems = chosen
+      .filter(sel => sel.type === 'position')
+      .map(sel => ({ name: sel.name.trim() || sel.data.suggested_name, pan: sel.data.pan, tilt: sel.data.tilt, zoom: sel.data.zoom }))
+    setPresetCreating(true)
+    const r = await api.bulkCreatePresets({ color: colorItems, position: positionItems })
+    setPresetCreating(false)
+    if (r.ok) {
+      const count = (r.created?.color?.length || 0) + (r.created?.position?.length || 0)
+      setPresetDone(count)
+      setSuggestedPresets(null)
+    }
+  }
+
+  function togglePresetSelection(sel) {
+    setPresetSelections(prev => prev.map(p => p === sel ? { ...p, selected: !p.selected } : p))
+  }
+
+  function updatePresetName(sel, name) {
+    setPresetSelections(prev => prev.map(p => p === sel ? { ...p, name } : p))
   }
 
   function toggleExpand(idx) {
@@ -144,7 +214,10 @@ export default function ImportCuePanel({ onClose, onImported }) {
       setResponse(null)
     } else {
       setResponse(r)
-      if (r.ok || (r.results && r.results.some(x => x.ok))) onImported()
+      if (r.ok || (r.results && r.results.some(x => x.ok))) {
+        onImported()
+        if (r.suggested_presets) initPresetOffer(r.suggested_presets)
+      }
     }
   }
 
@@ -177,7 +250,10 @@ export default function ImportCuePanel({ onClose, onImported }) {
     setChatMessages([])
     setChatResolved(false)
     setResponse(r)
-    if (r.ok || (r.results && r.results.some(x => x.ok))) onImported()
+    if (r.ok || (r.results && r.results.some(x => x.ok))) {
+      onImported()
+      if (r.suggested_presets) initPresetOffer(r.suggested_presets)
+    }
   }
 
   const canExecute = !loading && file && response && response.dry_run === true && (!response.errors || response.errors.length === 0)
@@ -316,6 +392,70 @@ export default function ImportCuePanel({ onClose, onImported }) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* 프리셋 생성 완료 배너 */}
+      {presetDone !== null && (
+        <div style={s.presetDoneBanner}>
+          프리셋 {presetDone}개가 만들어졌습니다.
+        </div>
+      )}
+
+      {/* 프리셋 제안 */}
+      {suggestedPresets && (
+        <div style={s.presetOfferWrap}>
+          <div style={s.presetOfferTitle}>프리셋 만들기</div>
+          <div style={s.presetOfferSub}>
+            큐시트에서 발견된 색상/포지션 데이터로 프리셋을 만들 수 있습니다.
+            원하는 항목을 선택하고 이름을 입력한 뒤 만들기를 누르세요.
+          </div>
+
+          {presetSelections.map((sel, i) => (
+            <div key={i} style={s.presetItem}>
+              <input
+                type="checkbox"
+                checked={sel.selected}
+                onChange={() => togglePresetSelection(sel)}
+              />
+              {sel.type === 'color' ? (
+                <div style={{ ...s.presetSwatch, background: rgbScaleToHex(sel.data.r, sel.data.g, sel.data.b) }} />
+              ) : (
+                <div style={{ ...s.presetSwatch, background: '#22263a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#7a7f9a' }}>POS</div>
+              )}
+              <span style={s.presetTypeBadge}>{sel.type === 'color' ? '색상' : '포지션'}</span>
+              <input
+                style={{ ...s.presetNameInput, opacity: sel.selected ? 1 : 0.4 }}
+                value={sel.name}
+                disabled={!sel.selected}
+                onChange={e => updatePresetName(sel, e.target.value)}
+                placeholder="프리셋 이름"
+              />
+              <span style={s.presetItemMeta}>
+                {sel.type === 'color'
+                  ? `RGB(${sel.data.r}, ${sel.data.g}, ${sel.data.b}) · 큐 ${sel.data.cues.slice(0, 4).join(', ')}${sel.data.cues.length > 4 ? '…' : ''}`
+                  : `P${sel.data.pan} T${sel.data.tilt} Z${sel.data.zoom} · 큐 ${sel.data.cues.slice(0, 4).join(', ')}${sel.data.cues.length > 4 ? '…' : ''}`
+                }
+              </span>
+            </div>
+          ))}
+
+          <div style={{ ...s.btnRow, marginTop: 14 }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleCreatePresets}
+              disabled={presetCreating || !presetSelections.some(sel => sel.selected)}
+            >
+              {presetCreating ? '만드는 중...' : `프리셋 만들기 (${presetSelections.filter(sel => sel.selected).length}개)`}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setSuggestedPresets(null)}
+              disabled={presetCreating}
+            >
+              건너뛰기
+            </button>
+          </div>
         </div>
       )}
 
