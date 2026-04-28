@@ -87,6 +87,7 @@ except ImportError:
         cmd_preview_position,
         cmd_q,
         cmd_select_fixtures,
+        cmd_set_cue_fade,
         cmd_store_cue,
         cmd_strobe,
         cmd_tilt,
@@ -342,6 +343,7 @@ class CompleteChatRequest(BaseModel):
 
 class ApplySessionRequest(BaseModel):
     on_error: str = "skip"
+    dry_run: bool = False
 
 
 @app.post("/api/groups")
@@ -682,6 +684,21 @@ async def apply_cue_session(session_id: str, req: ApplySessionRequest = None):
         except ValueError as e:
             errors.append({"row_index": r.get("row_index", "?"), "column": "cue", "message": str(e)})
 
+    if req.dry_run:
+        results = []
+        for r in valid_rows:
+            results.append({**_row_stub(r), "ok": True, "error": "", "commands": r["commands"]})
+        return {
+            "ok": len(errors) == 0,
+            "dry_run": True,
+            "parser": "ai",
+            "total_rows": len(rows),
+            "valid_rows": len(valid_rows),
+            "errors": errors,
+            "results": results,
+            "suggested_presets": extract_preset_candidates(rows),
+        }
+
     results = []
     to_process = []
     async with _cues_lock:
@@ -751,9 +768,10 @@ class PositionModel(BaseModel):
 
 class BulkEditRequest(BaseModel):
     cue_numbers: List[str]
-    fixture_numbers: List[int] = Field(min_length=1)
+    fixture_numbers: List[int] = []
     color: Optional[ColorModel] = None
     position: Optional[PositionModel] = None
+    fade: Optional[float] = Field(default=None, ge=0.0, le=300.0)
     colorPresetId: Optional[str] = None
     positionPresetId: Optional[str] = None
 
@@ -779,10 +797,10 @@ class PreviewSnapshotRequest(BaseModel):
 async def bulk_edit_cues(req: BulkEditRequest):
     if not req.cue_numbers:
         raise HTTPException(status_code=400, detail="cue_numbers가 비어 있습니다.")
-    if not req.fixture_numbers:
-        raise HTTPException(status_code=400, detail="fixture_numbers가 비어 있습니다.")
-    if not req.color and not req.position:
-        raise HTTPException(status_code=400, detail="color 또는 position 중 하나는 필요합니다.")
+    if not req.color and not req.position and req.fade is None:
+        raise HTTPException(status_code=400, detail="color, position, fade 중 하나는 필요합니다.")
+    if (req.color or req.position) and not req.fixture_numbers:
+        raise HTTPException(status_code=400, detail="color/position 변경에는 fixture_numbers가 필요합니다.")
 
     # Validate all cue numbers exist in cues.json
     async with _cues_lock:
@@ -797,26 +815,29 @@ async def bulk_edit_cues(req: BulkEditRequest):
     updated, failed = [], []
     for cue_num in req.cue_numbers:
         try:
-            await send_and_log(cmd_goto_cue(cue_num))
-            if req.color:
-                cmds = cmd_preview_color(
-                    req.fixture_numbers,
-                    req.color.r,
-                    req.color.g,
-                    req.color.b,
-                )
-                for c in cmds:
-                    await send_and_log(c)
-            if req.position:
-                cmds = cmd_preview_position(
-                    req.fixture_numbers,
-                    pan=req.position.pan,
-                    tilt=req.position.tilt,
-                    focus=req.position.focus,
-                )
-                for c in cmds:
-                    await send_and_log(c)
-            await send_and_log(cmd_update_cue(cue_num))
+            if req.color or req.position:
+                await send_and_log(cmd_goto_cue(cue_num))
+                if req.color:
+                    cmds = cmd_preview_color(
+                        req.fixture_numbers,
+                        req.color.r,
+                        req.color.g,
+                        req.color.b,
+                    )
+                    for c in cmds:
+                        await send_and_log(c)
+                if req.position:
+                    cmds = cmd_preview_position(
+                        req.fixture_numbers,
+                        pan=req.position.pan,
+                        tilt=req.position.tilt,
+                        focus=req.position.focus,
+                    )
+                    for c in cmds:
+                        await send_and_log(c)
+                await send_and_log(cmd_update_cue(cue_num))
+            if req.fade is not None:
+                await send_and_log(cmd_set_cue_fade(cue_num, req.fade))
             await asyncio.sleep(0.1)
             updated.append(cue_num)
         except Exception as exc:
@@ -825,11 +846,12 @@ async def bulk_edit_cues(req: BulkEditRequest):
 
     await send_and_log(cmd_clear_all())
 
-    # Persist color/position meta to cues.json
+    # Persist meta to cues.json
     async with _cues_lock:
         cues, _ = _read_cues()
+        updated_set = set(updated)
         for c in cues:
-            if c["number"] in updated:
+            if c["number"] in updated_set:
                 if req.color:
                     c["color"] = req.color.model_dump()
                     if req.colorPresetId:
@@ -840,6 +862,8 @@ async def bulk_edit_cues(req: BulkEditRequest):
                         c["positionPresetId"] = req.positionPresetId
                 if req.fixture_numbers:
                     c["fixture_numbers"] = req.fixture_numbers
+                if req.fade is not None:
+                    c["fade"] = req.fade
         _write_cues(cues)
         refreshed = cues
 
@@ -1243,6 +1267,61 @@ async def ai_command_endpoint(req: AICommandRequest):
             "ok": True,
             "explanation": parsed.get("explanation", ""),
             "actions": actions,
+            "parsed": parsed,
+        }
+
+    if parsed.get("mode") == "bulk_edit":
+        cue_numbers = parsed.get("cue_numbers", [])
+        fixture_numbers = parsed.get("fixture_numbers", [])
+
+        # "ALL"이면 cues.json에서 전체 큐 번호 가져오기
+        if cue_numbers == ["ALL"]:
+            async with _cues_lock:
+                all_cues, migrated = _read_cues()
+                if migrated:
+                    _write_cues(all_cues)
+            cue_numbers = [c["number"] for c in all_cues]
+
+        if not cue_numbers:
+            return {
+                "ok": False,
+                "explanation": "큐 번호가 필요합니다.",
+                "actions": [],
+                "parsed": parsed,
+            }
+
+        color_obj = None
+        position_obj = None
+        fade_val = parsed.get("fade")
+        if parsed.get("color"):
+            c = parsed["color"]
+            color_obj = ColorModel(r=c.get("r", 0), g=c.get("g", 0), b=c.get("b", 0))
+        if parsed.get("position"):
+            p = parsed["position"]
+            position_obj = PositionModel(pan=p.get("pan"), tilt=p.get("tilt"), focus=p.get("focus"))
+
+        if not color_obj and not position_obj and fade_val is None:
+            return {
+                "ok": False,
+                "explanation": "색상(color), 포지션(position), 페이드(fade) 중 하나는 지정해야 합니다.",
+                "actions": [],
+                "parsed": parsed,
+            }
+
+        bulk_req = BulkEditRequest(
+            cue_numbers=cue_numbers,
+            fixture_numbers=fixture_numbers,
+            color=color_obj,
+            position=position_obj,
+            fade=fade_val,
+        )
+        result = await bulk_edit_cues(bulk_req)
+
+        return {
+            "ok": result.get("ok", False),
+            "explanation": parsed.get("explanation", f"큐 {cue_numbers} 편집 완료"),
+            "actions": actions,
+            "cues_updated": True,
             "parsed": parsed,
         }
 

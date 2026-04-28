@@ -137,6 +137,12 @@ def cmd_effect_low(value: int) -> str:
     return f'Attribute "EffLow" At {value}'
 
 
+def cmd_set_cue_fade(cue_number: str, fade: float) -> str:
+    num = _validate_cue_number(cue_number)
+    fade = max(0.0, round(fade, 2))
+    return f"Store Cue {num} Fade {fade}"
+
+
 def cmd_update_cue(cue_number: str) -> str:
     return f"Update Cue {_validate_cue_number(cue_number)}"
 
