@@ -41,11 +41,7 @@ const mockApi = {
   clear: () => ok(),
   clearFixtures: () => ok(),
   rawCommand: () => ok(),
-  aiCommand: (text) => Promise.resolve({
-    ok: true,
-    explanation: `[데모 모드] "${text}" — 실제 MA2 없이 동작을 시뮬레이션합니다. 실제 명령은 전송되지 않습니다.`,
-    actions: [],
-  }),
+  aiCommand: (text) => realApi.aiCommand(text),
   fixtureStates: () => Promise.resolve({}),
   getCues: () => Promise.resolve({ cues: [..._mockCues] }),
   addCue: (number, label = '') => {
@@ -61,10 +57,36 @@ const mockApi = {
   executeCue: () => ok(),
   syncCues: () => ok(),
   setQ: () => ok(),
-  importCuesExcel: () => Promise.resolve({ ok: false, error: '데모 모드에서는 파일 업로드를 지원하지 않습니다.' }),
-  importTemplateUrl: () => '#',
-  completeCueChat: () => Promise.resolve({ ok: false, error: '데모 모드에서는 엑셀 대화를 지원하지 않습니다.' }),
-  applyCueSession: () => Promise.resolve({ ok: false, error: '데모 모드' }),
+  importCuesExcel: async (file, dry_run = true, on_error = 'skip') => {
+    const r = await realApi.importCuesExcel(file, true, on_error)
+    if (r && r.session_id) return r
+    if (dry_run) return r
+    if (!r || r.ok === false) return r
+    if (Array.isArray(r.results)) {
+      for (const row of r.results) {
+        const number = String(row.cue)
+        if (!_mockCues.find(c => c.number === number)) {
+          _mockCues.push({ number, label: row.label || '', fade: 0, colorPresetId: null, positionPresetId: null })
+        }
+      }
+    }
+    return { ...r, dry_run: false, ok: (r.errors?.length ?? 0) === 0 }
+  },
+  importTemplateUrl: () => BASE + '/cues/import-template',
+  completeCueChat: (sessionId, message) => realApi.completeCueChat(sessionId, message),
+  applyCueSession: async (sessionId, onError = 'skip') => {
+    const r = await realApi.applyCueSession(sessionId, onError, true)
+    if (!r) return r
+    if (Array.isArray(r.results)) {
+      for (const row of r.results) {
+        const number = String(row.cue)
+        if (!_mockCues.find(c => c.number === number)) {
+          _mockCues.push({ number, label: row.label || '', fade: 0, colorPresetId: null, positionPresetId: null })
+        }
+      }
+    }
+    return { ...r, dry_run: false, ok: r.ok !== false && (r.errors?.length ?? 0) === 0 }
+  },
   renameCue: (number, label) => {
     const cue = _mockCues.find(c => c.number === String(number))
     if (cue) cue.label = label
@@ -140,7 +162,7 @@ const realApi = {
   },
   importTemplateUrl: () => BASE + '/cues/import-template',
   completeCueChat: (sessionId, message) => post(`/cues/complete/${sessionId}`, { message }),
-  applyCueSession: (sessionId, onError = 'skip') => post(`/cues/complete/${sessionId}/apply`, { on_error: onError }),
+  applyCueSession: (sessionId, onError = 'skip', dryRun = false) => post(`/cues/complete/${sessionId}/apply`, { on_error: onError, dry_run: dryRun }),
   renameCue: (cue_number, label) =>
     request(`/cues/${encodeURIComponent(cue_number)}/label`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label }),

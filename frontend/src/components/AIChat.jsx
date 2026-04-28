@@ -181,6 +181,7 @@ export default function AIChat({ connected, aiOpen, onToggle, onCueImported, onP
       if (r.ok === false) addMsg('error-msg', r.error || '처리 실패')
       else {
         addMsg('assistant', r.explanation || '완료됐습니다.', { actions: r.actions || [] })
+        if (r.cues_updated) onCueImported?.()
       }
     }
     inputRef.current?.focus()

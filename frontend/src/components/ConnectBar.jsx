@@ -27,7 +27,7 @@ export default function ConnectBar({
   }
 
   return (
-    <div className="topbar">
+    <div className={`topbar${demoMode ? ' demo' : ''}`}>
       <div className="brand">
         <div className="brand-mark">MA</div>
         <span>grandMA2 온보딩</span>
@@ -64,10 +64,10 @@ export default function ConnectBar({
         {blacked ? '● BLACKED' : 'BLACKOUT'}
       </button>
 
-      <div className={`pill${ok ? ' live' : connecting ? '' : ' err'}`}>
+      <div className={`pill${demoMode ? ' demo' : ok ? ' live' : connecting ? '' : ' err'}`}>
         <span className="dot" />
         <span>
-          {connecting ? '연결 중…' : ok ? autoInfo.host : '미연결'}
+          {connecting ? '연결 중…' : demoMode ? 'DEMO' : ok ? autoInfo.host : '미연결'}
         </span>
       </div>
 
