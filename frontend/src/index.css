@@ -120,6 +120,14 @@ html, body, #root { height: 100%; overflow: hidden; }
 }
 .icon-btn:hover { background: var(--surface); color: var(--text); border-color: var(--border); }
 
+/* ── Demo mode topbar indicator ── */
+.topbar.demo {
+  border-top: 2px solid var(--accent);
+  box-shadow: 0 2px 12px var(--accent-glow);
+}
+.pill.demo .dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: pulseDot 2s ease-in-out infinite; }
+.pill.demo { color: var(--accent); border-color: var(--accent-glow); }
+
 .theme-toggle {
   display: flex; align-items: center; gap: 2px;
   padding: 2px; border-radius: 999px;
@@ -648,10 +656,10 @@ html, body, #root { height: 100%; overflow: hidden; }
 .cp-mini-label.dim { color: var(--text-dim); }
 .cp-mini-edit { width: 100%; font-size: 11px; background: var(--bg-elev-2); border: 1px solid var(--accent); border-radius: 3px; color: var(--text); padding: 1px 4px; outline: none; }
 .cp-mini-go {
-  flex-shrink: 0; width: 44px; height: 26px;
+  flex-shrink: 0; width: 52px; height: 32px;
   background: var(--accent); color: #000;
   border: none; border-radius: var(--radius-sm);
-  font-family: var(--font-mono); font-size: 12px; font-weight: 900;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 900;
   letter-spacing: 0.06em; cursor: pointer;
   transition: opacity 0.12s var(--ease);
 }
@@ -675,11 +683,12 @@ html, body, #root { height: 100%; overflow: hidden; }
 .cp-mini-prev-btn:hover:not(:disabled) { background: var(--surface-hover); color: var(--text); }
 .cp-mini-prev-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .cp-mini-next-btn {
-  flex-shrink: 0; width: 52px; height: 34px;
-  display: grid; place-items: center;
+  flex-shrink: 0; width: 68px; height: 34px;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
   background: var(--accent); color: #000;
   border: none; border-radius: var(--radius-sm);
-  cursor: pointer; font-weight: 800;
+  cursor: pointer; font-weight: 800; font-size: 12px; font-family: var(--font-mono);
+  letter-spacing: 0.04em;
   transition: opacity 0.12s var(--ease);
   box-shadow: 0 0 10px var(--accent-glow);
 }

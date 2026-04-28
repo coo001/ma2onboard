@@ -253,7 +253,7 @@ export default function CuePanel({ refreshKey, onBulkEdit, onToast, onCuesLoaded
           <Prev size={13} />
         </button>
         <button className="cp-mini-next-btn" onClick={handleNext} disabled={!cues.length || sending} title="다음 큐 실행 (Space)">
-          <Next size={15} />
+          <Next size={13} /> GO
         </button>
       </div>
     </div>

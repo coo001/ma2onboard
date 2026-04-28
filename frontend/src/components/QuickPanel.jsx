@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback, createPortal } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { api, updatePresetValues } from '../api'
 import Section from './Section'
 import Slider from './Slider'
@@ -452,7 +453,9 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
   }
 
   return (<>
-    <div className="col" style={{ overflowY: 'auto' }}>
+    <div className="col">
+      {/* 상단 고정: 채널 + 밝기 */}
+      <div style={{ flexShrink: 0, borderBottom: '2px solid var(--border)', overflowY: 'auto', maxHeight: '52%' }}>
 
       {/* 채널 */}
       <Section title="채널" meta={`제어 ${active.length} · 저장 ${selected.length}`}>
@@ -518,6 +521,11 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
       <Section title="밝기" meta={`${intensity}%`}>
         <Slider value={intensity} onChange={setIntensity} onCommit={()=>applyIntensity(intensity)} hero />
       </Section>
+
+      </div>{/* end 상단 고정 */}
+
+      {/* 스크롤 영역: 포지션, 색상, 씬, 이펙트 */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
 
       {/* 포지션 + 포지션 프리셋 */}
       <Section title="움직임 / 포커스">
@@ -620,6 +628,7 @@ export default function QuickPanel({ onCueStored, onToast, cues = [], onPresetSe
         )}
       </Section>
 
+      </div>{/* end 스크롤 영역 */}
     </div>
 
     {/* 큐 저장 — CuePanel 상단 슬롯으로 portal */}
